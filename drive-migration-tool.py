@@ -17,7 +17,8 @@ except ImportError:
 # If modifying these scopes, delete your previously saved credentials
 # at ~/.credentials/drive-python-quickstart.json
 SCOPES = 'https://www.googleapis.com/auth/drive.readonly'
-CLIENT_SECRET_FILE = 'client_secret.json'
+SRC_SECRET_FILE = 'src_client_secret.json'
+DEST_SECRET_FILE = 'dest_client_secret.json'
 APPLICATION_NAME = 'Drive Migration Tool'
 
 ROOT_FOLDER = 'root'
@@ -65,7 +66,7 @@ class Drive():
             # Print file(s)
             for file in self.files:
                 if self.get_folder(name=root).id in file.parents:
-                    print (prefix + file.name)
+                    print (prefix + "\t" + file.name)
 
             # Print child folder(s)
             for folder in self.folders:
@@ -79,7 +80,7 @@ class Drive():
             # Print file(s)
             for file in self.files:
                 if curr_folder.id in file.parents:
-                    print (prefix + file.name)
+                    print (prefix + "\t" + file.name)
 
             # Print child folder(s)
             for folder in self.folders:
@@ -100,6 +101,10 @@ class Drive():
         if user.email not in self.get_user_emails():
             self.users.add(user)
 
+    def update_info(self, user):
+        """ Update the owner and last known user for a file/folder
+        """
+        pass
 
 class User():
     """ User representation class
@@ -136,7 +141,7 @@ class Folder():
     def __repr__(self):
         return "<folder: {0}>".format(self.name)
 
-def get_credentials():
+def get_credentials(src):
     """Gets valid user credentials from storage.
 
     If nothing has been stored, or if the stored credentials are invalid,
@@ -149,19 +154,27 @@ def get_credentials():
     credential_dir = os.path.join(home_dir, '.credentials')
     if not os.path.exists(credential_dir):
         os.makedirs(credential_dir)
-    credential_path = os.path.join(credential_dir,
-                                   'drive-migration-tool.json')
+    if src == 'src':
+        credential_path = os.path.join(credential_dir,
+                                   'src-drive-migration-tool.json')
+    else:
+        credential_path = os.path.join(credential_dir,
+                                   'dest-drive-migration-tool.json')
 
     store = Storage(credential_path)
     credentials = store.get()
     if not credentials or credentials.invalid:
-        flow = client.flow_from_clientsecrets(CLIENT_SECRET_FILE, SCOPES)
+        if src == 'src':
+            flow = client.flow_from_clientsecrets(SRC_SECRET_FILE, SCOPES)
+        else:
+            flow = client.flow_from_clientsecrets(DEST_SECRET_FILE, SCOPES)
         flow.user_agent = APPLICATION_NAME
         if flags:
             credentials = tools.run_flow(flow, store, flags)
         else: # Needed only for compatibility with Python 2.6
             credentials = tools.run(flow, store)
         print('Storing credentials to ' + credential_path)
+
     return credentials
 
 def main():
@@ -170,8 +183,9 @@ def main():
     Creates a Google Drive API service object and outputs the names and IDs
     for up to 10 files.
     """
-    credentials = get_credentials()
-    http = credentials.authorize(httplib2.Http())
+    src_credentials = get_credentials('src')
+    # dest_credentials = get_credentials('dest')
+    http = src_credentials.authorize(httplib2.Http())
     service = discovery.build('drive', 'v3', http=http)
 
     page_token = None
@@ -226,42 +240,6 @@ def main():
     print ("Found {0} pages of results.".format(page_no))
 
     # Print the drive structure
-
-    sys.exit()
-
-    # Get the root folder id
-    if ROOT_FOLDER != 'root':
-        results = service.files().list(q="name = '"+ROOT_FOLDER+"' and mimeType = 'application/vnd.google-apps.folder'",
-            pageSize=1000,fields="nextPageToken, files(id)").execute()
-        items = results.get('files', [])
-
-        if not items:
-            print('Root folder not found...')
-            sys.exit()
-
-        root_folder_id = items[0]['id']
-    else:
-        root_folder_id = 'root'
-
-    # Get the folder structure under the root folder
-    results = service.files().list(q="'"+root_folder_id+"' in parents and mimeType = 'application/vnd.google-apps.folder'",
-        pageSize=1000,fields="nextPageToken, files(id, name, owners, parents)").execute()
-    items = results.get('files', [])
-    base_folders = set()
-    if not items:
-        print('No files found under root folder, exiting...')
-        sys.exit()
-    else:
-        print('Building folder structure...')
-        # Build folder structure
-        for item in items:
-            # print('{0}: {1} ({2}) - {3}'.format(item['name'], item['lastModifyingUser']['displayName'], item['modifiedTime'], item['owners'][0]['displayName']))
-            folder = Folder(id=item['id'], name=item['name'], owner=item['owners'][0]['emailAddress'])
-            folder.add_children(service)
-            base_folders.add(folder)
-
-    for folder in base_folders:
-        folder.print_tree()
 
 if __name__ == '__main__':
     main()
