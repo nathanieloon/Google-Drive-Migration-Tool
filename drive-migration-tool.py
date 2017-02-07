@@ -3,7 +3,7 @@ import httplib2
 import os
 import sys
 
-from apiclient import discovery
+from apiclient import discovery, errors
 from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
@@ -16,7 +16,7 @@ except ImportError:
 
 # If modifying these scopes, delete your previously saved credentials
 # at ~/.credentials/drive-python-quickstart.json
-SCOPES = 'https://www.googleapis.com/auth/drive.readonly'
+SCOPES = 'https://www.googleapis.com/auth/drive.metadata'
 CLIENT_SECRET_FILE = 'client_secret.json'
 APPLICATION_NAME = 'Drive Migration Tool'
 
@@ -49,22 +49,45 @@ class Drive():
         """
         for folder in self.folders:
             if parent:
-                if (folder.id == id or folder.name == name) and self.get_folder(name=parent).id in folder.parents:
+                parent_folder = self.get_folder(name=parent)
+                if (folder.id == id or folder.name == name) and parent_folder.id in folder.parents:
                     return folder
             else:
                 if folder.id == id or folder.name == name:
                     return folder
 
         print ("Could not find the folder with name: <{0}>, id: <{1}>, and parent: <{2}>. Aborting.".format(name, id, parent))
-        sys.exit()
+        return None
+
+    def get_folders(self, name=None, id=None, parent=None):
+        """ Get a list of folders which have a certain name
+        """
+        folder_set = set()
+        for folder in self.folders:
+            if parent:
+                parent_folder = self.get_folder(name=parent)
+                if (folder.id == id or folder.name == name) and parent_folder.id in folder.parents:
+                    folder_set.add(folder)
+            else:
+                if folder.id == id or folder.name == name:
+                    folder_set.add(folder)
+
+        if len(folder_set) > 0:
+            return folder_set
+        else:
+            print ("Could not find a folder with name: <{0}>, id: <{1}>, and parent: <{2}>. Aborting.".format(name, id, parent))
+            sys.exit()
 
     def get_file(self, name=None, id=None, parent=None):
         """ Get a file by name or id
         """
         for file in self.files:
             if parent:
-                if (file.id == id or file.name == name) and self.get_folder(name=parent).id in file.parents:
-                    return file
+                possible_folders = self.get_folders(name=parent)
+                for parent_folder in possible_folders:
+                    if (file.id == id or file.name == name) and parent_folder.id in file.parents:
+                        # print ("Found file <{0} - {1}> in folder <{2} - {3}>".format(file.id, file.name, parent_folder.id, parent_folder.name))
+                        return file
             else:
                 if file.id == id or file.name == name:
                     return file
@@ -81,7 +104,7 @@ class Drive():
 
         # Print the current folder
         if verbose:
-            print (prefix + curr_folder.name.encode('utf-8') + " ("+curr_folder.owner.name.encode('utf-8')+")" + " ("+curr_folder.last_modified_time.encode('utf-8')+")" + " ("+curr_folder.last_modified_by.email.encode('utf-8')+")")
+            print (prefix + curr_folder.id, curr_folder.name.encode('utf-8') + " ("+curr_folder.owner.name.encode('utf-8')+")" + " ("+curr_folder.last_modified_time.encode('utf-8')+")" + " ("+curr_folder.last_modified_by.email.encode('utf-8')+")")
         else:
             print (prefix + curr_folder.name.encode('utf-8'))
 
@@ -89,7 +112,7 @@ class Drive():
         for file in self.files:
             if curr_folder.id in file.parents:
                 if verbose:
-                    print (prefix + "\t" + file.name.encode('utf-8') + " ("+file.owner.name.encode('utf-8')+")" + " ("+file.last_modified_time.encode('utf-8')+")" + " ("+file.last_modified_by.email.encode('utf-8')+")")
+                    print (prefix + "\t" + file.id, file.name.encode('utf-8') + " ("+file.owner.name.encode('utf-8')+")" + " ("+file.last_modified_time.encode('utf-8')+")" + " ("+file.last_modified_by.email.encode('utf-8')+")")
                 else:
                     print (prefix + "\t" + file.name.encode('utf-8'))
 
@@ -122,20 +145,20 @@ class Drive():
         """ Update the supplied drive item with the last known modified date and modifying user
         """
         try:
-            # Retrieve the file
-            file = self.service.files().get(fileId=dest_item.id).execute()
-
-            # Update the file
-            file['modifiedTime'] = src_item.last_modified_time
+            # Build the updated payload
+            body = {"modifiedTime": src_item.last_modified_time}
 
             # Send the file back
-            self.service.files().update(fileId=dest_item.id, 
-                                   body=file)
+            response = self.service.files().update(fileId=dest_item.id, 
+                                        body=body).execute()
+
+            print (response)
+
+            print ("Successfully updated <{0}> in drive <{1}>.".format(dest_item.name.encode('utf-8'), self.name))
+
         except errors.HttpError, error:
             print ("An error occurred: {0}".format(error))
             sys.exit()
-
-        print ("Successfully updated {0}.".format(dest_item.name.encode('utf-8')))
 
     def build_drive(self):
         """ Build the Google drive for the given service
@@ -288,6 +311,10 @@ def main():
     # print ("Printing destination drive structure.")
 
     # Test updating file
+    fname = 'cr53_cop_bug.pdf'
+    parent = 'cr53_bugs'
+    src_file = src_drive.get_file(name=fname, parent=parent)
+    dest_file = dest_drive.get_file(name=fname, parent=parent)
     dest_drive.update_last_modified_info(src_file, dest_file)
 
 if __name__ == '__main__':
