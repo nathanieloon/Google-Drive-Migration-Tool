@@ -35,6 +35,7 @@ class Drive():
 
         # Initialise the drive
         self.build_drive()
+        self.generate_paths()
 
     def add_folder(self, folder):
         """ Add a folder to the drive
@@ -91,14 +92,56 @@ class Drive():
                     break;
 
         if not any(obj.name == path_list[-1] for obj in path_objects) or len(path_objects) == 0:
-            print ("Path <{0}> could not be found.".format(PATH_ROOT+path))
-            print (path_objects)
+            print ("Path <{0}> could not be found. Only found: <{1}>".format(PATH_ROOT+path, path_objects))
             for obj in path_objects:
                 print (obj)
             return None
 
         # Return the path objects
         return path_objects
+
+    def generate_paths(self, curr_item=None, curr_path=None):
+        """ Generate all the paths for every file and folder in the drive - expensive
+        """
+        # Start in root
+        if not curr_item:
+            curr_item = self.root
+
+        # Build folders first
+        if not curr_path:
+            curr_path = []
+
+        for file in self.files:
+            path_objects = list(curr_path)
+            if curr_path:
+                curr_item = path_objects[-1]
+
+            if not file.path and curr_item.id in file.parents:
+                # Build the path
+                path_objects.append(file)
+                path_string = self.build_path_string(path_objects)
+
+                # Set the file path string
+                file.set_path(path_string)
+
+        for folder in self.folders:
+            # Reset to the current path
+            # print (curr_path)
+            path_objects = list(curr_path)
+            if curr_path:
+                curr_item = path_objects[-1]
+
+            if not folder.path and curr_item.id in folder.parents:
+                # Build the path
+                path_objects.append(folder)
+                path_string = self.build_path_string(path_objects)
+
+                # Set the folder path string
+                folder.set_path(path_string)
+
+                # Generate children
+                self.generate_paths(folder, path_objects)
+
 
     def build_path_string(self, path_objects):
         """ Build the path string from a given list of path_objects
@@ -108,9 +151,9 @@ class Drive():
 
         for index, obj in enumerate(path_objects):
             if index == end_index:
-                path_string.append(obj.name)
+                path_string = path_string + obj.name
             else:
-                path_string.append(obj.name + "/")
+                path_string = path_string + obj.name + "/"
 
         return path_string
 
@@ -129,7 +172,7 @@ class Drive():
             break;
 
         if return_string:
-            self.buil_path_string(path_objects)
+            self.build_path_string(path_objects)
         else:
             return path_objects
 
@@ -196,7 +239,9 @@ class Drive():
                 curr_folder = path_objects[-1]
 
         # Print the current folder
-        if verbose:
+        if curr_folder is self.root:
+            print (prefix + curr_folder.id, curr_folder.name.encode('utf-8') + " ("+curr_folder.owner.name.encode('utf-8')+")")
+        elif verbose:
             print (prefix + curr_folder.id, curr_folder.name.encode('utf-8') + " ("+curr_folder.owner.name.encode('utf-8')+")" + " ("+curr_folder.last_modified_time.encode('utf-8')+")" + " ("+curr_folder.last_modified_by.email.encode('utf-8')+")")
         else:
             print (prefix + curr_folder.name.encode('utf-8'))
@@ -310,7 +355,8 @@ class Drive():
                         owner=owner, 
                         parents=None,
                         last_modified_time=None,
-                        last_modified_by=None)
+                        last_modified_by=None,
+                        path=PATH_ROOT)
         self.root = root_folder
 
         # Get the rest of the drive
@@ -390,13 +436,20 @@ class File():
         self.last_modified_by = last_modified_by
         self.mime_type = mime_type
 
+        self.path = None
+
     def __repr__(self):
         return "<file: {0}>".format(self.name)
+
+    def set_path(self, path):
+        """ Set the file path string
+        """
+        self.path = path
 
 class Folder():
     """ Folder representation class
     """
-    def __init__(self, id, name, owner, parents=None, last_modified_time=None, last_modified_by=None):
+    def __init__(self, id, name, owner, parents=None, last_modified_time=None, last_modified_by=None, path=None):
         self.id = id
         self.name = name
         self.parents = parents
@@ -404,8 +457,15 @@ class Folder():
         self.last_modified_time = last_modified_time
         self.last_modified_by = last_modified_by
 
+        self.path = path
+
     def __repr__(self):
         return "<folder: {0}>".format(self.name)
+
+    def set_path(self, path):
+        """ Set the folder path string
+        """
+        self.path = path
 
 def convert_to_new_domain(email, new_domain):
     """ Convert a given email to a new domain
