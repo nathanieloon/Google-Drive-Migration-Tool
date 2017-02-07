@@ -20,7 +20,7 @@ SCOPES = 'https://www.googleapis.com/auth/drive'
 CLIENT_SECRET_FILE = 'client_secret.json'
 APPLICATION_NAME = 'Drive Migration Tool'
 
-PATH_ROOT = 'D:/'
+PATH_ROOT = 'D:'
 
 class Drive():
     """ Google Drive representation class
@@ -35,7 +35,9 @@ class Drive():
 
         # Initialise the drive
         self.build_drive()
-        self.generate_paths()
+        print ("Generating paths for <{0}>.".format(self.name))
+        self.generate_paths() # This is so expensive, needs optimisation
+        print ("Finished generating paths for <{0}>.".format(self.name))
 
     def add_folder(self, folder):
         """ Add a folder to the drive
@@ -117,9 +119,10 @@ class Drive():
                 curr_item = path_objects[-1]
 
             if not file.path and curr_item.id in file.parents:
+                path_string = curr_item.path + "/" + file.name
                 # Build the path
-                path_objects.append(file)
-                path_string = self.build_path_string(path_objects)
+                # path_objects.append(file)
+                # path_string = self.build_path_string(path_objects)
 
                 # Set the file path string
                 file.set_path(path_string)
@@ -132,9 +135,10 @@ class Drive():
                 curr_item = path_objects[-1]
 
             if not folder.path and curr_item.id in folder.parents:
+                path_string = curr_item.path + "/" + folder.name
                 # Build the path
-                path_objects.append(folder)
-                path_string = self.build_path_string(path_objects)
+                # path_objects.append(folder)
+                # path_string = self.build_path_string(path_objects)
 
                 # Set the folder path string
                 folder.set_path(path_string)
@@ -275,32 +279,54 @@ class Drive():
         if user.email not in self.get_user_emails():
             self.users.add(user)
 
-    def update_drive(self, src_drive, root='root', parent=None, curr_folder=None):
+    def update_drive(self, src_drive, base_folder_path=None, parent=None, curr_folder=None):
         """ Update the owner and last known modified date for a file/folder
         """
         # If we don't have a current folder, get one
         if not curr_folder:
-            curr_folder = src_drive.get_folder(name=root, parent=parent)
+            if not base_folder_path:
+                curr_folder = self.root
+            else:
+                curr_folder = src_drive.get_folder_via_path(base_folder_path)
 
         # Update files in current folder
         file_count = 0
         for file in src_drive.files:
             if curr_folder.id in file.parents:
-                self.update_info(src_drive=src_drive, item=file, parent=curr_folder)
+                self.update_info(src_drive=src_drive, path=file.path)
+                file_count += 1
 
-        print ("Updated <{0}> files in folder <{1}> in <{2}> drive.".format(file_count, curr_folder, self.name))
+        print ("Updated <{0}> files in folder <{1}> in <{2}> drive.".format(file_count, curr_folder.name, self.name))
 
         # Update sub-folders
         for folder in src_drive.folders:
-            if curr_folder in folder.parents:
+            if curr_folder.id in folder.parents:
                 result = self.update_drive(src_drive=src_drive, parent=curr_folder, curr_folder=folder)
                 print (result)
 
-    def update_info(self, src_drive, item, parent, update_owner=False):
+    def get_file_via_path(self, path):
+        """ Get a file via its path
+        """
+        for file in self.files:
+            if file.path == path:
+                return file
+
+        print ("Could not find file at <{0}> in <{1}>.".format(path))
+
+    def get_folder_via_path(self, path):
+        """ Get a folder via its path
+        """
+        for folder in self.folders:
+            if folder.path == path:
+                return folder
+
+        print ("Could not find folder at <{0}> in <{1}>.".format(path))
+
+    def update_info(self, src_drive, path, update_owner=False):
         """ Update the supplied drive item with the last known modified date and owner for a given file
         """
-        src_item = src_drive.get_file(name=item.name, parent_name=parent.name)
-        dest_item = self.get_file(name=item.name, parent_name=parent.name)
+        src_item = src_drive.get_file_via_path(path)
+        dest_item = self.get_file_via_path(path)
 
         # Make sure both the source and destination files can be found
         if not src_item:
@@ -516,7 +542,7 @@ def main():
     dest_http = dest_credentials.authorize(httplib2.Http())
     dest_service = discovery.build('drive', 'v3', http=dest_http)
 
-    # src_drive = Drive("source drive", src_service)
+    src_drive = Drive("source drive", src_service)
     dest_drive = Drive("destination drive", dest_service)
 
     # Print the drive structure
@@ -524,6 +550,10 @@ def main():
     # Test updating file
     # parent = 'nov-16'
     # dest_drive.update_info(src_drive, fname, parent)
+
+    # for folder in src_drive.folders:
+    #     if folder.name == '2016-06':
+    #         print (folder.id, folder.name, folder.path)
 
     # Test full drive update
 
