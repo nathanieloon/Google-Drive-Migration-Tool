@@ -67,23 +67,27 @@ class Drive():
         for item in path_list:
             # Check the folders for matches
             for folder in self.folders:
-                # print (curr_item.id, folder.parents, curr_item.name, item)
                 if curr_item.id in folder.parents and folder.name == item:
                     # Add the object to the list
-                    path_objects.append(curr_item)
-
                     # Set the current folder
                     curr_item = folder
+
+                    # Add it to the list
+                    path_objects.append(curr_item)
+
+                    # Hope there aren't duplicates
                     break;
 
             # Check the files for matches
             for file in self.files:
-                if curr_item.id in file.parents and curr_item.name == item:
+                if curr_item.id in file.parents and file.name == item:
+                    # Set the current file
+                    curr_item = file
+
                     # Add the object to the list
                     path_objects.append(curr_item)
 
-                    # Set the current file
-                    curr_item = file
+                    # Hope there aren't duplicates
                     break;
 
         if not any(obj.name == path_list[-1] for obj in path_objects) or len(path_objects) == 0:
