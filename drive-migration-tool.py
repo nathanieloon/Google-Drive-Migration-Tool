@@ -296,13 +296,15 @@ class Drive():
                 self.update_info(src_drive=src_drive, path=file.path)
                 file_count += 1
 
+        # Update the current folder
+        self.update_info(src_drive=src_drive, path=curr_folder.path, type='folder')
+
         print ("Updated <{0}> files in folder <{1}> in <{2}> drive.".format(file_count, curr_folder.name, self.name))
 
         # Update sub-folders
         for folder in src_drive.folders:
             if curr_folder.id in folder.parents:
-                result = self.update_drive(src_drive=src_drive, parent=curr_folder, curr_folder=folder)
-                print (result)
+                self.update_drive(src_drive=src_drive, parent=curr_folder, curr_folder=folder)
 
     def get_file_via_path(self, path):
         """ Get a file via its path
@@ -311,7 +313,7 @@ class Drive():
             if file.path == path:
                 return file
 
-        print ("Could not find file at <{0}> in <{1}>.".format(path))
+        print ("Could not find file at <{0}> in <{1}>.".format(path, self.name))
 
     def get_folder_via_path(self, path):
         """ Get a folder via its path
@@ -320,13 +322,17 @@ class Drive():
             if folder.path == path:
                 return folder
 
-        print ("Could not find folder at <{0}> in <{1}>.".format(path))
+        print ("Could not find folder at <{0}> in <{1}>.".format(path, self.name))
 
-    def update_info(self, src_drive, path, update_owner=False):
+    def update_info(self, src_drive, path, type='file', update_owner=False):
         """ Update the supplied drive item with the last known modified date and owner for a given file
         """
-        src_item = src_drive.get_file_via_path(path)
-        dest_item = self.get_file_via_path(path)
+        if type == 'file':
+            src_item = src_drive.get_file_via_path(path)
+            dest_item = self.get_file_via_path(path)
+        else:
+            src_item = src_drive.get_folder_via_path(path)
+            dest_item = self.get_folder_via_path(path)
 
         # Make sure both the source and destination files can be found
         if not src_item:
