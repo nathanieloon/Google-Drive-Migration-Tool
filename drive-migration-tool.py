@@ -1,3 +1,13 @@
+# -*- coding: utf-8 -*-
+""" Google Drive Migration Tool
+
+This script is designed to help users migrate between a source and destination
+Google Drive. The script is designed to be used alongside a cloud transfer
+service such as Multcloud (https://www.multcloud.com/home).
+
+"""
+
+# Imports
 from __future__ import print_function
 import httplib2
 import os
@@ -8,23 +18,39 @@ from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
 
-try:
-    import argparse
-    flags = argparse.ArgumentParser(parents=[tools.argparser]).parse_args()
-except ImportError:
-    flags = None
-
-# If modifying these scopes, delete your previously saved credentials
-# at ~/.credentials/drive-python-quickstart.json
-SCOPES = 'https://www.googleapis.com/auth/drive'
-CLIENT_SECRET_FILE = 'client_secret.json'
-APPLICATION_NAME = 'Drive Migration Tool'
-
-PATH_ROOT = 'D:'
+# Global variables
+SCOPES = 'https://www.googleapis.com/auth/drive'    # Scope for Google Drive authentication
+CLIENT_SECRET_FILE = 'client_secret.json'           # Client secret
+APPLICATION_NAME = 'Drive Migration Tool'           # App name
+PATH_ROOT = 'D:'                                    # Root drive (set this to whatever you want)
+UPDATE_OWNER = False                                # Option for updating the owner of the file to a new domain
 
 
-class Drive():
+class Drive(object):
     """ Google Drive representation class
+
+    Class for representing a Google Drive. Has children of Folders and Files.
+
+    Args:
+        users   (set(User))     Set of users inside the Drive
+        service (discovery)     Discovery service from the Drive API
+
+    Attributes:
+        name    (str)           Name of the Drive
+        folders (set(Folder))   Set of folders inside the Drive
+        files   (set(File))     Set of files inside the Drive
+        users   (set(User))     Set of users inside the Drive
+        service (discovery)     Discovery service from the Drive API
+
+    Notes:
+        The list of users is NOT a directory of users. It is only users who
+            have some sort of permission/interaction with a file/folder inside
+            the Drive (eg Last Modifying User, Owner, etc)
+        When an instance of Drive is initiated, it executes two functions:
+            build_drive() creates the objects within the Drive (eg Folders)
+            generate_paths() creates the paths of every file/folder in
+                the Drive (eg D:/Hello-world)
+
     """
 
     def __init__(self, name, service):
@@ -36,9 +62,9 @@ class Drive():
         self.service = service
 
         # Initialise the drive
-        self.build_drive()
+        self._build_drive()
         print("Generating paths for <{0}>.".format(self.name))
-        self.generate_paths()  # This is so expensive, needs optimisation
+        self._generate_paths()  # This is expensive, needs optimisation
         print("Finished generating paths for <{0}>.".format(self.name))
 
     def add_folder(self, folder):
@@ -53,6 +79,13 @@ class Drive():
 
     def parse_path(self, path):
         """ Parse a given file path, returning an ordered list of path objects
+
+        Args:
+            path (str): Path to file/folder
+
+        Returns:
+            [Folder/File]: Ordered list of folders/file objects
+
         """
         if PATH_ROOT not in path:
             print("Invalid path <{0}>.".format(path))
@@ -105,52 +138,16 @@ class Drive():
         # Return the path objects
         return path_objects
 
-    def generate_paths(self, curr_item=None, curr_path=None):
-        """ Generate all the paths for every file and folder in the drive - expensive
-        """
-        # Start in root
-        if not curr_item:
-            curr_item = self.root
-
-        # Build folders first
-        if not curr_path:
-            curr_path = []
-
-        for file in self.files:
-            path_objects = list(curr_path)
-            if curr_path:
-                curr_item = path_objects[-1]
-
-            if not file.path and curr_item.id in file.parents:
-                path_string = curr_item.path + "/" + file.name
-                # Build the path
-                # path_objects.append(file)
-                # path_string = self.build_path_string(path_objects)
-
-                # Set the file path string
-                file.set_path(path_string)
-
-        for folder in self.folders:
-            # Reset to the current path
-            # print (curr_path)
-            path_objects = list(curr_path)
-            if curr_path:
-                curr_item = path_objects[-1]
-
-            if not folder.path and curr_item.id in folder.parents:
-                path_string = curr_item.path + "/" + folder.name
-                # Build the path
-                # path_objects.append(folder)
-                # path_string = self.build_path_string(path_objects)
-
-                # Set the folder path string
-                folder.set_path(path_string)
-
-                # Generate children
-                self.generate_paths(folder, path_objects)
-
     def build_path_string(self, path_objects):
         """ Build the path string from a given list of path_objects
+
+        Args:
+            path_objects ([File/Folders]): List of File and/or Folder
+                objects
+
+        Returns:
+            str: Path string (eg D:/Hello-world)
+
         """
         path_string = PATH_ROOT
         end_index = len(path_objects) - 1
@@ -163,80 +160,17 @@ class Drive():
 
         return path_string
 
-    def build_path(self, file, return_string=False):
-        """ Build the path to a given file
-        """
-        curr_item = file
-        path_objects = []
-        while curr_item != self.root:
-            for folder in self.folders:
-                if folder.id in curr_item.parents:
-                    path_objects.insert(0, curr_item)
-                    curr_item = folder
-
-            print("Path to <{0}> could not be built.".format(file.name))
-            break
-
-        if return_string:
-            self.build_path_string(path_objects)
-        else:
-            return path_objects
-
-    def get_folder(self, name=None, id=None, parent=None):
-        """ Get a folder by name or id
-        """
-        for folder in self.folders:
-            if parent:
-                parent_folder = self.get_folder(name=parent)
-                if (folder.id == id or folder.name == name) and parent_folder.id in folder.parents:
-                    return folder
-            else:
-                if folder.id == id or folder.name == name:
-                    return folder
-
-        print("Could not find the folder with name: <{0}>, id: <{1}>, and parent: <{2}>. Aborting.".format(
-            name, id, parent))
-        return None
-
-    def get_folders(self, name=None, id=None, parent_name=None):
-        """ Get a list of folders which have a certain name
-        """
-        folder_set = set()
-        for folder in self.folders:
-            if parent_name:
-                parent_folder = self.get_folder(name=parent_name)
-                if (folder.id == id or folder.name == name) and parent_folder.id in folder.parents:
-                    folder_set.add(folder)
-            else:
-                if folder.id == id or folder.name == name:
-                    folder_set.add(folder)
-
-        if len(folder_set) > 0:
-            return folder_set
-        else:
-            print("Could not find a folder with name: <{0}>, id: <{1}>, and parent: <{2}>. Aborting.".format(
-                name, id, parent_name))
-            sys.exit()
-
-    def get_file(self, name=None, id=None, parent_name=None):
-        """ Get a file by name or id
-        """
-        for file in self.files:
-            if parent_name:
-                possible_folders = self.get_folders(name=parent_name)
-                for parent_folder in possible_folders:
-                    if (file.id == id or file.name == name) and parent_folder.id in file.parents:
-                        return file
-            else:
-                if file.id == id or file.name == name:
-                    return file
-
-        print("Could not find the file with name: <{0}>, id: <{1}>, and parent: <{2}> in <{3}>.".format(
-            name, id, parent_name, self.name))
-        return None
-
     def print_drive(self, base_folder_path=PATH_ROOT, verbose=False, curr_folder=None, prefix=""):
         """ Print the drive structure from the given root folder
+
+        Args:
+            base_folder_path (str, optional): Base folder path, defaults to
+                the root folder
+            verbose (bool, optional): Verbose printing on/off, defaults to off
+            curr_folder (Folder, optional): Current folder being printed
+            prefix (str, optional): Prefix for indenting/formatting the
+                printing
+
         """
         # If we're looking at the base folder, set it as the current folder
         if not curr_folder:
@@ -252,8 +186,10 @@ class Drive():
             print(prefix + curr_folder.id, curr_folder.name.encode('utf-8') +
                   " (" + curr_folder.owner.name.encode('utf-8') + ")")
         elif verbose:
-            print(prefix + curr_folder.id, curr_folder.name.encode('utf-8') + " (" + curr_folder.owner.name.encode('utf-8') + ")" +
-                  " (" + curr_folder.last_modified_time.encode('utf-8') + ")" + " (" + curr_folder.last_modified_by.email.encode('utf-8') + ")")
+            print(prefix + curr_folder.id, curr_folder.name.encode('utf-8') +
+                  " (" + curr_folder.owner.name.encode('utf-8') + ")" +
+                  " (" + curr_folder.last_modified_time.encode('utf-8') + ")" +
+                  " (" + curr_folder.last_modified_by.email.encode('utf-8') + ")")
         else:
             print(prefix + curr_folder.name.encode('utf-8'))
 
@@ -261,8 +197,10 @@ class Drive():
         for file in self.files:
             if curr_folder.id in file.parents:
                 if verbose:
-                    print(prefix + "\t" + file.id, file.name.encode('utf-8') + " (" + file.owner.name.encode('utf-8') + ")" +
-                          " (" + file.last_modified_time.encode('utf-8') + ")" + " (" + file.last_modified_by.email.encode('utf-8') + ")")
+                    print(prefix + "\t" + file.id, file.name.encode('utf-8') +
+                          " (" + file.owner.name.encode('utf-8') + ")" +
+                          " (" + file.last_modified_time.encode('utf-8') + ")" +
+                          " (" + file.last_modified_by.email.encode('utf-8') + ")")
                 else:
                     print(prefix + "\t" + file.name.encode('utf-8'))
 
@@ -290,6 +228,15 @@ class Drive():
 
     def update_drive(self, src_drive, base_folder_path=None, parent=None, curr_folder=None):
         """ Update the owner and last known modified date for a file/folder
+
+        Args:
+            src_drive (Drive): Source Drive instance
+            base_folder_path (str, optional): Base folder to start the update
+                in, defaults to root
+            parent (Folder, optional): Parent folder object
+            curr_folder (Folder, optional): Current folder object being
+                looked at
+
         """
         # If we don't have a current folder, get one
         if not curr_folder:
@@ -337,10 +284,18 @@ class Drive():
         print("Could not find folder at <{0}> in <{1}>.".format(
             path, self.name))
 
-    def update_info(self, src_drive, path, type='file', update_owner=False):
-        """ Update the supplied drive item with the last known modified date and owner for a given file
+    def update_info(self, src_drive, path, is_file=True):
+        """ Update the supplied drive item with the last known modified
+            date and owner for a given file
+
+        Args:
+            src_drive (Drive): Source Drive instance
+            path (str): Path of file/folder being updated
+            is_file (bool, optional): Is the path a file, defaults
+                to True
+
         """
-        if type == 'file':
+        if is_file:
             src_item = src_drive.get_file_via_path(path)
             dest_item = self.get_file_via_path(path)
         else:
@@ -362,7 +317,7 @@ class Drive():
                                                         body=time_body
                                                         ).execute()
 
-            if update_owner:
+            if UPDATE_OWNER:
                 # Get the new user email
                 new_user = convert_to_new_domain(
                     src_item.last_modified_by.email, NEW_DOMAIN)
@@ -385,8 +340,59 @@ class Drive():
             print("An error occurred: {0}".format(error))
             sys.exit()
 
-    def build_drive(self):
-        """ Build the Google drive for the given service
+    def _generate_paths(self, curr_item=None, curr_path=None):
+        """ Generate all the paths for every file and folder in the drive - expensive
+
+        Builds all the paths for every item in the Drive. Stores them in the
+            path attribute for each item.
+
+        Args:
+            curr_item (File/Folder, optional): Current item being looked at
+            curr_path (str): Current path to item being looked at
+
+        """
+        # Start in root
+        if not curr_item:
+            curr_item = self.root
+
+        # Build folders first
+        if not curr_path:
+            curr_path = []
+
+        for file in self.files:
+            path_objects = list(curr_path)
+            if curr_path:
+                curr_item = path_objects[-1]
+
+            if not file.path and curr_item.id in file.parents:
+                # Build the path string
+                path_string = curr_item.path + "/" + file.name
+
+                # Set the file path string
+                file.set_path(path_string)
+
+        for folder in self.folders:
+            # Reset to the current path
+            # print (curr_path)
+            path_objects = list(curr_path)
+            if curr_path:
+                curr_item = path_objects[-1]
+
+            if not folder.path and curr_item.id in folder.parents:
+                # Build the path string
+                path_string = curr_item.path + "/" + folder.name
+
+                # Set the folder path string
+                folder.set_path(path_string)
+
+                # Generate children
+                self._generate_paths(folder, path_objects)
+
+    def _build_drive(self):
+        """ Build the Google Drive for the given service
+
+        Build the Drive objects from the provided API point.
+
         """
         page_token = None
         page_no = 1
@@ -465,8 +471,17 @@ class Drive():
             page_no, self.name))
 
 
-class User():
+class User(object):
     """ User representation class
+
+    Args:
+        name (str): Name of the user
+        email (str): Email of the user
+
+    Attributes:
+        name (str): Name of the user
+        email (str): Email of the user
+
     """
 
     def __init__(self, name, email):
@@ -477,8 +492,28 @@ class User():
         return "<user: {0}>".format(self.email)
 
 
-class File():
+class File(object):
     """ File representation class
+
+    Args:
+        id (str): Google Drive ID of the file
+        name (str): Name of the file
+        owner (User): Owner of the file
+        parents ([str]): List of parent IDs
+        last_modified_time (str): "Last modified time"
+        last_modified_by (User): "Last modified by" user
+        mime_type (str): MIME Type of the file
+
+    Attributes:
+        id (str): Google Drive ID of the file
+        name (str): Name of the file
+        owner (User): Owner of the file
+        parents ([str]): List of parent IDs
+        last_modified_time (str): "Last modified time"
+        last_modified_by (User): "Last modified by" user
+        mime_type (str): MIME Type of the file
+        path (str): Path to the file within the Drive
+
     """
 
     def __init__(self, id, name, owner, parents, last_modified_time, last_modified_by, mime_type):
@@ -501,8 +536,27 @@ class File():
         self.path = path
 
 
-class Folder():
+class Folder(object):
     """ Folder representation class
+
+    Args:
+        id (str): Google Drive ID of the folder
+        name (str): Name of the folder
+        owner (User): Owner of the folder
+        parents ([str], optional): List of parent IDs
+        last_modified_time (str, optional): "Last modified time"
+        last_modified_by (User, optional): "Last modified by" user
+        path (str, optional): Path to the folder within the Drive
+
+    Attributes:
+        id (str): Google Drive ID of the folder
+        name (str): Name of the folder
+        owner (User): Owner of the folder
+        parents ([str]): List of parent IDs
+        last_modified_time (str): "Last modified time"
+        last_modified_by (User): "Last modified by" user
+        path (str): Path to the folder within the Drive
+
     """
 
     def __init__(self, id, name, owner, parents=None, last_modified_time=None, last_modified_by=None, path=None):
@@ -526,6 +580,14 @@ class Folder():
 
 def convert_to_new_domain(email, new_domain):
     """ Convert a given email to a new domain
+
+    Args:
+        email (str): User email
+        new_domain (str): New domain to transform to (eg "hello-world.com")
+
+    Returns:
+        str: Email address with new domain
+
     """
     return email.split('@')[0].encode('utf-8') + '@' + new_domain
 
@@ -590,6 +652,7 @@ def main():
 
     # Test full drive update
     dest_drive.update_drive(src_drive=src_drive,
+                            base_folder_path=ROOT_FOLDER)
 
 
 if __name__ == '__main__':
