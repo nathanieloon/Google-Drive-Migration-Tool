@@ -22,9 +22,11 @@ APPLICATION_NAME = 'Drive Migration Tool'
 
 PATH_ROOT = 'D:'
 
+
 class Drive():
     """ Google Drive representation class
     """
+
     def __init__(self, name, service):
         self.name = name
         self.folders = set()
@@ -35,9 +37,9 @@ class Drive():
 
         # Initialise the drive
         self.build_drive()
-        print ("Generating paths for <{0}>.".format(self.name))
-        self.generate_paths() # This is so expensive, needs optimisation
-        print ("Finished generating paths for <{0}>.".format(self.name))
+        print("Generating paths for <{0}>.".format(self.name))
+        self.generate_paths()  # This is so expensive, needs optimisation
+        print("Finished generating paths for <{0}>.".format(self.name))
 
     def add_folder(self, folder):
         """ Add a folder to the drive
@@ -53,7 +55,7 @@ class Drive():
         """ Parse a given file path, returning an ordered list of path objects
         """
         if PATH_ROOT not in path:
-            print ("Invalid path <{0}>.".format(path))
+            print("Invalid path <{0}>.".format(path))
             return None
 
         if path == PATH_ROOT:
@@ -79,7 +81,7 @@ class Drive():
                     path_objects.append(curr_item)
 
                     # Hope there aren't duplicates
-                    break;
+                    break
 
             # Check the files for matches
             for file in self.files:
@@ -91,12 +93,13 @@ class Drive():
                     path_objects.append(curr_item)
 
                     # Hope there aren't duplicates
-                    break;
+                    break
 
         if not any(obj.name == path_list[-1] for obj in path_objects) or len(path_objects) == 0:
-            print ("Path <{0}> could not be found. Only found: <{1}>".format(PATH_ROOT+path, path_objects))
+            print("Path <{0}> could not be found. Only found: <{1}>".format(
+                PATH_ROOT + path, path_objects))
             for obj in path_objects:
-                print (obj)
+                print(obj)
             return None
 
         # Return the path objects
@@ -146,10 +149,9 @@ class Drive():
                 # Generate children
                 self.generate_paths(folder, path_objects)
 
-
     def build_path_string(self, path_objects):
         """ Build the path string from a given list of path_objects
-        """ 
+        """
         path_string = PATH_ROOT
         end_index = len(path_objects) - 1
 
@@ -172,8 +174,8 @@ class Drive():
                     path_objects.insert(0, curr_item)
                     curr_item = folder
 
-            print ("Path to <{0}> could not be built.".format(file.name))
-            break;
+            print("Path to <{0}> could not be built.".format(file.name))
+            break
 
         if return_string:
             self.build_path_string(path_objects)
@@ -192,7 +194,8 @@ class Drive():
                 if folder.id == id or folder.name == name:
                     return folder
 
-        print ("Could not find the folder with name: <{0}>, id: <{1}>, and parent: <{2}>. Aborting.".format(name, id, parent))
+        print("Could not find the folder with name: <{0}>, id: <{1}>, and parent: <{2}>. Aborting.".format(
+            name, id, parent))
         return None
 
     def get_folders(self, name=None, id=None, parent_name=None):
@@ -211,7 +214,8 @@ class Drive():
         if len(folder_set) > 0:
             return folder_set
         else:
-            print ("Could not find a folder with name: <{0}>, id: <{1}>, and parent: <{2}>. Aborting.".format(name, id, parent_name))
+            print("Could not find a folder with name: <{0}>, id: <{1}>, and parent: <{2}>. Aborting.".format(
+                name, id, parent_name))
             sys.exit()
 
     def get_file(self, name=None, id=None, parent_name=None):
@@ -227,7 +231,8 @@ class Drive():
                 if file.id == id or file.name == name:
                     return file
 
-        print ("Could not find the file with name: <{0}>, id: <{1}>, and parent: <{2}> in <{3}>.".format(name, id, parent_name, self.name))
+        print("Could not find the file with name: <{0}>, id: <{1}>, and parent: <{2}> in <{3}>.".format(
+            name, id, parent_name, self.name))
         return None
 
     def print_drive(self, base_folder_path=PATH_ROOT, verbose=False, curr_folder=None, prefix=""):
@@ -244,25 +249,29 @@ class Drive():
 
         # Print the current folder
         if curr_folder is self.root:
-            print (prefix + curr_folder.id, curr_folder.name.encode('utf-8') + " ("+curr_folder.owner.name.encode('utf-8')+")")
+            print(prefix + curr_folder.id, curr_folder.name.encode('utf-8') +
+                  " (" + curr_folder.owner.name.encode('utf-8') + ")")
         elif verbose:
-            print (prefix + curr_folder.id, curr_folder.name.encode('utf-8') + " ("+curr_folder.owner.name.encode('utf-8')+")" + " ("+curr_folder.last_modified_time.encode('utf-8')+")" + " ("+curr_folder.last_modified_by.email.encode('utf-8')+")")
+            print(prefix + curr_folder.id, curr_folder.name.encode('utf-8') + " (" + curr_folder.owner.name.encode('utf-8') + ")" +
+                  " (" + curr_folder.last_modified_time.encode('utf-8') + ")" + " (" + curr_folder.last_modified_by.email.encode('utf-8') + ")")
         else:
-            print (prefix + curr_folder.name.encode('utf-8'))
+            print(prefix + curr_folder.name.encode('utf-8'))
 
         # Print file(s)
         for file in self.files:
             if curr_folder.id in file.parents:
                 if verbose:
-                    print (prefix + "\t" + file.id, file.name.encode('utf-8') + " ("+file.owner.name.encode('utf-8')+")" + " ("+file.last_modified_time.encode('utf-8')+")" + " ("+file.last_modified_by.email.encode('utf-8')+")")
+                    print(prefix + "\t" + file.id, file.name.encode('utf-8') + " (" + file.owner.name.encode('utf-8') + ")" +
+                          " (" + file.last_modified_time.encode('utf-8') + ")" + " (" + file.last_modified_by.email.encode('utf-8') + ")")
                 else:
-                    print (prefix + "\t" + file.name.encode('utf-8'))
+                    print(prefix + "\t" + file.name.encode('utf-8'))
 
         # Print child folder(s)
         for folder in self.folders:
             if folder.parents:
                 if curr_folder.id in folder.parents:
-                    self.print_drive(verbose=verbose, curr_folder=folder, prefix=prefix+"\t")
+                    self.print_drive(
+                        verbose=verbose, curr_folder=folder, prefix=prefix + "\t")
 
     def get_user_emails(self):
         """ Get all user emails
@@ -297,14 +306,17 @@ class Drive():
                 file_count += 1
 
         # Update the current folder
-        self.update_info(src_drive=src_drive, path=curr_folder.path, type='folder')
+        self.update_info(src_drive=src_drive,
+                         path=curr_folder.path, type='folder')
 
-        print ("Updated <{0}> files in folder <{1}> in <{2}> drive.".format(file_count, curr_folder.name, self.name))
+        print("Updated <{0}> files in folder <{1}> in <{2}> drive.".format(
+            file_count, curr_folder.name, self.name))
 
         # Update sub-folders
         for folder in src_drive.folders:
             if curr_folder.id in folder.parents:
-                self.update_drive(src_drive=src_drive, parent=curr_folder, curr_folder=folder)
+                self.update_drive(src_drive=src_drive,
+                                  parent=curr_folder, curr_folder=folder)
 
     def get_file_via_path(self, path):
         """ Get a file via its path
@@ -313,7 +325,7 @@ class Drive():
             if file.path == path:
                 return file
 
-        print ("Could not find file at <{0}> in <{1}>.".format(path, self.name))
+        print("Could not find file at <{0}> in <{1}>.".format(path, self.name))
 
     def get_folder_via_path(self, path):
         """ Get a folder via its path
@@ -322,7 +334,8 @@ class Drive():
             if folder.path == path:
                 return folder
 
-        print ("Could not find folder at <{0}> in <{1}>.".format(path, self.name))
+        print("Could not find folder at <{0}> in <{1}>.".format(
+            path, self.name))
 
     def update_info(self, src_drive, path, type='file', update_owner=False):
         """ Update the supplied drive item with the last known modified date and owner for a given file
@@ -345,13 +358,14 @@ class Drive():
             time_body = {'modifiedTime': src_item.last_modified_time}
 
             # Send the file back
-            time_response = self.service.files().update(fileId=dest_item.id, 
+            time_response = self.service.files().update(fileId=dest_item.id,
                                                         body=time_body
                                                         ).execute()
 
             if update_owner:
                 # Get the new user email
-                new_user = convert_to_new_domain(src_item.last_modified_by.email, NEW_DOMAIN)
+                new_user = convert_to_new_domain(
+                    src_item.last_modified_by.email, NEW_DOMAIN)
 
                 # Build the updated payload
                 user_body = {'emailAddress': new_user,
@@ -359,7 +373,7 @@ class Drive():
                              'type': 'user'}
 
                 # Send the file back
-                user_response = self.service.permissions().create(fileId=dest_item.id, 
+                user_response = self.service.permissions().create(fileId=dest_item.id,
                                                                   body=user_body,
                                                                   sendNotificationEmail=True,
                                                                   transferOwnership=True
@@ -368,7 +382,7 @@ class Drive():
             return "Successfully updated <{0}> in drive <{1}>.".format(dest_item.name.encode('utf-8'), self.name)
 
         except errors.HttpError, error:
-            print ("An error occurred: {0}".format(error))
+            print("An error occurred: {0}".format(error))
             sys.exit()
 
     def build_drive(self):
@@ -376,39 +390,42 @@ class Drive():
         """
         page_token = None
         page_no = 1
-        print ("Retrieving drive data for <{0}>...".format(self.name))
+        print("Retrieving drive data for <{0}>...".format(self.name))
 
         # Get the root "My Drive" folder first
         response = self.service.files().get(fileId='root',
                                             fields="id, mimeType, name, owners").execute()
-        owner = User(name=response['owners'][0]['displayName'], email=response['owners'][0]['emailAddress'])
-        root_folder = Folder(id=response['id'], 
-                        name=response['name'], 
-                        owner=owner, 
-                        parents=None,
-                        last_modified_time=None,
-                        last_modified_by=None,
-                        path=PATH_ROOT)
+        owner = User(name=response['owners'][0]['displayName'], email=response[
+                     'owners'][0]['emailAddress'])
+        root_folder = Folder(id=response['id'],
+                             name=response['name'],
+                             owner=owner,
+                             parents=None,
+                             last_modified_time=None,
+                             last_modified_by=None,
+                             path=PATH_ROOT)
         self.root = root_folder
 
         # Get the rest of the drive
         while True:
             # Get entire folder structure, we'll work down from here
             response = self.service.files().list(q="trashed = false",
-                                            pageSize=1000,
-                                            pageToken=page_token,
-                                            fields="nextPageToken, files(id, mimeType, name, owners, parents, modifiedTime, lastModifyingUser)").execute()
+                                                 pageSize=1000,
+                                                 pageToken=page_token,
+                                                 fields="nextPageToken, files(id, mimeType, name, owners, parents, modifiedTime, lastModifyingUser)").execute()
             results = response.get('files', [])
 
             # Build folder structure in memory
             for result in results:
                 # Create owner
-                owner = User(name=result['owners'][0]['displayName'], email=result['owners'][0]['emailAddress'])
+                owner = User(name=result['owners'][0]['displayName'], email=result[
+                             'owners'][0]['emailAddress'])
                 self.add_user(owner)
 
                 # Save last modifying user, if it exists
                 if 'emailAddress' in result['lastModifyingUser']:
-                    modified_by = User(name=result['lastModifyingUser']['displayName'], email=result['lastModifyingUser']['emailAddress'])
+                    modified_by = User(name=result['lastModifyingUser'][
+                                       'displayName'], email=result['lastModifyingUser']['emailAddress'])
                     self.add_user(modified_by)
                 else:
                     modified_by = None
@@ -421,17 +438,17 @@ class Drive():
 
                 # Create drive item
                 if result['mimeType'] == 'application/vnd.google-apps.folder':
-                    folder = Folder(id=result['id'], 
-                                    name=result['name'], 
-                                    owner=owner, 
+                    folder = Folder(id=result['id'],
+                                    name=result['name'],
+                                    owner=owner,
                                     parents=parents,
                                     last_modified_time=result['modifiedTime'],
                                     last_modified_by=modified_by)
                     self.add_folder(folder)
                 else:
-                    file = File(id=result['id'], 
-                                name=result['name'], 
-                                owner=owner, 
+                    file = File(id=result['id'],
+                                name=result['name'],
+                                owner=owner,
                                 parents=parents,
                                 last_modified_time=result['modifiedTime'],
                                 last_modified_by=modified_by,
@@ -442,13 +459,16 @@ class Drive():
             page_token = response.get('nextPageToken', None)
             page_no += 1
             if page_token is None:
-                break;
+                break
 
-        print ("Found <{0}> pages of results for <{1}>. Drive has been built.".format(page_no, self.name))
+        print("Found <{0}> pages of results for <{1}>. Drive has been built.".format(
+            page_no, self.name))
+
 
 class User():
     """ User representation class
     """
+
     def __init__(self, name, email):
         self.name = name
         self.email = email
@@ -456,9 +476,11 @@ class User():
     def __repr__(self):
         return "<user: {0}>".format(self.email)
 
+
 class File():
     """ File representation class
     """
+
     def __init__(self, id, name, owner, parents, last_modified_time, last_modified_by, mime_type):
         self.id = id
         self.name = name
@@ -478,9 +500,11 @@ class File():
         """
         self.path = path
 
+
 class Folder():
     """ Folder representation class
     """
+
     def __init__(self, id, name, owner, parents=None, last_modified_time=None, last_modified_by=None, path=None):
         self.id = id
         self.name = name
@@ -499,10 +523,12 @@ class Folder():
         """
         self.path = path
 
+
 def convert_to_new_domain(email, new_domain):
     """ Convert a given email to a new domain
     """
-    return email.split('@')[0].encode('utf-8')+'@'+new_domain
+    return email.split('@')[0].encode('utf-8') + '@' + new_domain
+
 
 def get_credentials(src):
     """Gets valid user credentials from storage.
@@ -519,10 +545,10 @@ def get_credentials(src):
         os.makedirs(credential_dir)
     if src == 'src':
         credential_path = os.path.join(credential_dir,
-                                   'src-drive-migration-tool.json')
+                                       'src-drive-migration-tool.json')
     else:
         credential_path = os.path.join(credential_dir,
-                                   'dest-drive-migration-tool.json')
+                                       'dest-drive-migration-tool.json')
 
     store = Storage(credential_path)
     credentials = store.get()
@@ -531,11 +557,12 @@ def get_credentials(src):
         flow.user_agent = APPLICATION_NAME
         if flags:
             credentials = tools.run_flow(flow, store, flags)
-        else: # Needed only for compatibility with Python 2.6
+        else:  # Needed only for compatibility with Python 2.6
             credentials = tools.run(flow, store)
         print('Storing credentials to ' + credential_path)
 
     return credentials
+
 
 def main():
     # Source account credentials
@@ -562,6 +589,7 @@ def main():
     #         print (folder.id, folder.name, folder.path)
 
     # Test full drive update
+    dest_drive.update_drive(src_drive=src_drive,
 
 
 if __name__ == '__main__':
