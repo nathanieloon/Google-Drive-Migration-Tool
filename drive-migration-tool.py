@@ -12,6 +12,7 @@ from __future__ import print_function
 import httplib2
 import os
 import sys
+import argparse
 
 from apiclient import discovery, errors
 from oauth2client import client
@@ -26,8 +27,8 @@ CLIENT_SECRET_FILE = 'client_secret.json'           # Client secret
 APPLICATION_NAME = 'Drive Migration Tool'           # App name
 PATH_ROOT = 'D:'                                    # Root drive (set this to whatever you want)
 UPDATE_OWNER = False                                # Option for updating the owner of the file to a new domain
-NEW_DOMAIN = config.new_domain                      # New domain to migrate to
-ROOT_FOLDER = PATH_ROOT + config.root_folder        # Root folder to start in for migration
+NEW_DOMAIN = None                                   # New domain to migrate to
+ROOT_FOLDER = PATH_ROOT                             # Root folder to start in for migration
 
 
 class Drive(object):
@@ -164,7 +165,7 @@ class Drive(object):
 
         return path_string
 
-    def print_drive(self, base_folder_path=PATH_ROOT, verbose=False, curr_folder=None, prefix=""):
+    def print_drive(self, base_folder_path=ROOT_FOLDER, verbose=False, curr_folder=None, prefix=""):
         """ Print the drive structure from the given root folder
 
         Args:
@@ -630,24 +631,97 @@ def get_credentials(src):
     return credentials
 
 
+def build_arg_parser():
+    """ Build and return an args parser
+
+    Returns:
+        argparse: Args parser
+    """
+    # Primary parser
+    parser = argparse.ArgumentParser(description='Google Drive Migration Tool.')
+
+    parser.add_argument('-r', '--root', type=str, default=ROOT_FOLDER,
+                        help='Path to folder to start in (eg "D:/test"). Defaults to root Drive directory')
+    parser.add_argument('-p', '--prefix', type=str,
+                        help='Prefix letter for the drive (eg "D")')
+
+    # Function group
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-s', '--printsrc', action='store_true',
+                        help='Print the source Drive')
+    group.add_argument('-d', '--printdest', action='store_true',
+                        help='Print the destination Drive')
+    group.add_argument('-u', '--updatedrive', action='store_true',
+                        help='Update the destination Drive using the meta data from the source Drive')
+
+    # Updating user options
+    parser.add_argument('-us', '--updateuser', action='store_true',
+                        help='Flag for updating the user to the new domain')
+    parser.add_argument('-n', '--newdomain', type=str,
+                        help='Destination domain (eg "test.com")')
+
+    return parser
+
 def main():
-    # Source account credentials
-    src_credentials = get_credentials('src')
-    src_http = src_credentials.authorize(httplib2.Http())
-    src_service = discovery.build('drive', 'v3', http=src_http)
+    # Args parsing
+    parser = build_arg_parser()
+    args = parser.parse_args()
 
-    # Destination account credentials
-    dest_credentials = get_credentials('dest')
-    dest_http = dest_credentials.authorize(httplib2.Http())
-    dest_service = discovery.build('drive', 'v3', http=dest_http)
+    if args.prefix:
+        # Set the Drive prefix
+        global PATH_ROOT
+        PATH_ROOT = args.prefix + ":"
 
-    src_drive = Drive("source drive", src_service)
-    dest_drive = Drive("destination drive", dest_service)
+    if args.root:
+        # Set the root folder
+        if PATH_ROOT not in args.root:
+            print("The Drive prefix {0} is not in the supplied path.".format(PATH_ROOT))
+            sys.exit()
 
-    # Test full drive update
-    dest_drive.update_drive(src_drive=src_drive,
-                            base_folder_path=ROOT_FOLDER)
+        global ROOT_FOLDER
+        ROOT_FOLDER = args.root
 
+    if args.printsrc:
+        # Source account credentials
+        src_credentials = get_credentials('src')
+        src_http = src_credentials.authorize(httplib2.Http())
+        src_service = discovery.build('drive', 'v3', http=src_http)
+        src_drive = Drive('source drive', src_service)
+        src_drive.print_drive(args.root)
+
+    if args.printdest:
+        # Destination account credentials
+        dest_credentials = get_credentials('dest')
+        dest_http = dest_credentials.authorize(httplib2.Http())
+        dest_service = discovery.build('drive', 'v3', http=dest_http)
+        dest_drive = Drive("destination drive", dest_service)
+        dest_drive.print_drive(args.root)
+
+    if args.updatedrive:
+        print("Updating...")
+
+        # Source account credentials
+        src_credentials = get_credentials('src')
+        src_http = src_credentials.authorize(httplib2.Http())
+        src_service = discovery.build('drive', 'v3', http=src_http)
+        src_drive = Drive('source drive', src_service)
+
+        # Destination account credentials
+        dest_credentials = get_credentials('dest')
+        dest_http = dest_credentials.authorize(httplib2.Http())
+        dest_service = discovery.build('drive', 'v3', http=dest_http)
+        dest_drive = Drive('destination drive', dest_service)
+
+        # Check if we're updating the user
+        if args.updateuser and args.newdomain is None:
+            parser.error("--updateuser requires --newdomain")
+        elif args.updateuser and args.newdomain:
+            global NEW_DOMAIN, UPDATE_USER
+            NEW_DOMAIN = args.newdomain
+            UPDATE_USER = True
+
+        # Update the drive
+        dest_drive.update_drive(src_drive, args.root)
 
 if __name__ == '__main__':
     main()
