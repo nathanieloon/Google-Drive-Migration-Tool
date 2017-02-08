@@ -18,12 +18,16 @@ from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
 
+import config
+
 # Global variables
 SCOPES = 'https://www.googleapis.com/auth/drive'    # Scope for Google Drive authentication
 CLIENT_SECRET_FILE = 'client_secret.json'           # Client secret
 APPLICATION_NAME = 'Drive Migration Tool'           # App name
 PATH_ROOT = 'D:'                                    # Root drive (set this to whatever you want)
 UPDATE_OWNER = False                                # Option for updating the owner of the file to a new domain
+NEW_DOMAIN = config.new_domain                      # New domain to migrate to
+ROOT_FOLDER = PATH_ROOT + config.root_folder        # Root folder to start in for migration
 
 
 class Drive(object):
@@ -254,7 +258,7 @@ class Drive(object):
 
         # Update the current folder
         self.update_info(src_drive=src_drive,
-                         path=curr_folder.path, type='folder')
+                         path=curr_folder.path, is_file=False)
 
         print("Updated <{0}> files in folder <{1}> in <{2}> drive.".format(
             file_count, curr_folder.name, self.name))
@@ -639,16 +643,6 @@ def main():
 
     src_drive = Drive("source drive", src_service)
     dest_drive = Drive("destination drive", dest_service)
-
-    # Print the drive structure
-
-    # Test updating file
-    # parent = 'nov-16'
-    # dest_drive.update_info(src_drive, fname, parent)
-
-    # for folder in src_drive.folders:
-    #     if folder.name == '2016-06':
-    #         print (folder.id, folder.name, folder.path)
 
     # Test full drive update
     dest_drive.update_drive(src_drive=src_drive,
