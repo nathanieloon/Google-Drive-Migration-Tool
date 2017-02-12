@@ -19,17 +19,15 @@ from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
 
-import config
-
 # Global variables
 SCOPES = 'https://www.googleapis.com/auth/drive'    # Scope for Google Drive authentication
 CLIENT_SECRET_FILE = 'client_secret.json'           # Client secret
 APPLICATION_NAME = 'Drive Migration Tool'           # App name
 PATH_ROOT = 'D:'                                    # Root drive (set this to whatever you want)
 UPDATE_OWNER = False                                # Option for updating the owner of the file to a new domain
+UPDATE_PERMISSIONS = False                          # Update file/folder permissions
 NEW_DOMAIN = None                                   # New domain to migrate to
 ROOT_FOLDER = PATH_ROOT                             # Root folder to start in for migration
-
 
 class Drive(object):
     """ Google Drive representation class
@@ -193,8 +191,9 @@ class Drive(object):
         elif verbose:
             print(prefix + curr_folder.id, curr_folder.name.encode('utf-8') +
                   " (" + curr_folder.owner.name.encode('utf-8') + ")" +
-                  " (" + curr_folder.last_modified_time.encode('utf-8') + ")" +
-                  " (" + curr_folder.last_modified_by.email.encode('utf-8') + ")")
+                  " (" + curr_folder.last_modified_time.encode('utf-8') + ")", end='')
+            if curr_folder.last_modified_by:
+                print(" (" + curr_folder.last_modified_by.email.encode('utf-8') + ")")
         else:
             print(prefix + curr_folder.name.encode('utf-8'))
 
@@ -204,8 +203,9 @@ class Drive(object):
                 if verbose:
                     print(prefix + "\t" + file.id, file.name.encode('utf-8') +
                           " (" + file.owner.name.encode('utf-8') + ")" +
-                          " (" + file.last_modified_time.encode('utf-8') + ")" +
-                          " (" + file.last_modified_by.email.encode('utf-8') + ")")
+                          " (" + file.last_modified_time.encode('utf-8') + ")", end='')
+                if file.last_modified_by:
+                    print(" (" + file.last_modified_by.email.encode('utf-8') + ")")
                 else:
                     print(prefix + "\t" + file.name.encode('utf-8'))
 
@@ -321,6 +321,14 @@ class Drive(object):
             time_response = self.service.files().update(fileId=dest_item.id,
                                                         body=time_body
                                                         ).execute()
+
+            if UPDATE_PERMISSIONS:
+                # Update the permissions for a given item
+                permissions = src_drive.service.permissions().list(fileId=src_item.id,
+                                                                   fields='permissions(id, emailAddress, displayName, role, type)'
+                                                                   )
+                for permission in permissions:
+                    print(permission)
 
             if UPDATE_OWNER:
                 # Get the new user email
@@ -638,7 +646,8 @@ def build_arg_parser():
         argparse: Args parser
     """
     # Primary parser
-    parser = argparse.ArgumentParser(description='Google Drive Migration Tool.')
+    parser = argparse.ArgumentParser(
+        description='Google Drive Migration Tool.')
 
     parser.add_argument('-r', '--root', type=str, default=ROOT_FOLDER,
                         help='Path to folder to start in (eg "D:/test"). Defaults to root Drive directory')
@@ -648,19 +657,26 @@ def build_arg_parser():
     # Function group
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('-s', '--printsrc', action='store_true',
-                        help='Print the source Drive')
+                       help='Print the source Drive')
     group.add_argument('-d', '--printdest', action='store_true',
-                        help='Print the destination Drive')
+                       help='Print the destination Drive')
     group.add_argument('-u', '--updatedrive', action='store_true',
-                        help='Update the destination Drive using the meta data from the source Drive')
+                       help='Update the destination Drive using the meta data from the source Drive')
 
-    # Updating user options
-    parser.add_argument('-us', '--updateuser', action='store_true',
-                        help='Flag for updating the user to the new domain')
+    # Verbose printing
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Verbose printing of the tree')
+
+    # Updating permission options
+    parser.add_argument('-uo', '--updateowner', action='store_true',
+                        help='Flag for updating the owner to the new domain')
     parser.add_argument('-n', '--newdomain', type=str,
                         help='Destination domain (eg "test.com")')
+    parser.add_argument('-up', '--updateperm', action='store_true',
+                        help='Flag for updating the permissions for the file to the new domain')
 
     return parser
+
 
 def main():
     # Args parsing
@@ -687,7 +703,7 @@ def main():
         src_http = src_credentials.authorize(httplib2.Http())
         src_service = discovery.build('drive', 'v3', http=src_http)
         src_drive = Drive('source drive', src_service)
-        src_drive.print_drive(args.root)
+        src_drive.print_drive(args.root, verbose=args.verbose)
 
     if args.printdest:
         # Destination account credentials
@@ -695,9 +711,13 @@ def main():
         dest_http = dest_credentials.authorize(httplib2.Http())
         dest_service = discovery.build('drive', 'v3', http=dest_http)
         dest_drive = Drive("destination drive", dest_service)
-        dest_drive.print_drive(args.root)
+        dest_drive.print_drive(args.root, verbose=args.verbose)
 
     if args.updatedrive:
+        # Check --newdomain is set
+        if (args.updateowner or args.updateperm) and args.newdomain is None:
+            parser.error("--updateuser and --updateperm require --newdomain")
+
         print("Updating...")
 
         # Source account credentials
@@ -713,12 +733,11 @@ def main():
         dest_drive = Drive('destination drive', dest_service)
 
         # Check if we're updating the user
-        if args.updateuser and args.newdomain is None:
-            parser.error("--updateuser requires --newdomain")
-        elif args.updateuser and args.newdomain:
-            global NEW_DOMAIN, UPDATE_USER
+        if (args.updateowner or args.updateperm) and args.newdomain:
+            global NEW_DOMAIN, UPDATE_OWNER, UPDATE_PERMISSIONS
             NEW_DOMAIN = args.newdomain
-            UPDATE_USER = True
+            UPDATE_OWNER = args.updateowner
+            UPDATE_PERMISSIONS = args.updateperm
 
         # Update the drive
         dest_drive.update_drive(src_drive, args.root)
