@@ -19,6 +19,7 @@ from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
 
+
 # Global variables
 SCOPES = 'https://www.googleapis.com/auth/drive'    # Scope for Google Drive authentication
 CLIENT_SECRET_FILE = 'client_secret.json'           # Client secret
@@ -28,6 +29,7 @@ UPDATE_OWNER = False                                # Option for updating the ow
 UPDATE_PERMISSIONS = False                          # Update file/folder permissions
 NEW_DOMAIN = None                                   # New domain to migrate to
 ROOT_FOLDER = PATH_ROOT                             # Root folder to start in for migration
+FLAGS = None                                        # Flags for Google credentials
 
 class Drive(object):
     """ Google Drive representation class
@@ -204,8 +206,8 @@ class Drive(object):
                     print(prefix + "\t" + file.id, file.name.encode('utf-8') +
                           " (" + file.owner.name.encode('utf-8') + ")" +
                           " (" + file.last_modified_time.encode('utf-8') + ")", end='')
-                if file.last_modified_by:
-                    print(" (" + file.last_modified_by.email.encode('utf-8') + ")")
+                    if file.last_modified_by:
+                        print(" (" + file.last_modified_by.email.encode('utf-8') + ")")
                 else:
                     print(prefix + "\t" + file.name.encode('utf-8'))
 
@@ -630,8 +632,8 @@ def get_credentials(src):
     if not credentials or credentials.invalid:
         flow = client.flow_from_clientsecrets(CLIENT_SECRET_FILE, SCOPES)
         flow.user_agent = APPLICATION_NAME
-        if flags:
-            credentials = tools.run_flow(flow, store, flags)
+        if FLAGS:
+            credentials = tools.run_flow(flow, store, FLAGS)
         else:  # Needed only for compatibility with Python 2.6
             credentials = tools.run(flow, store)
         print('Storing credentials to ' + credential_path)
@@ -646,8 +648,9 @@ def build_arg_parser():
         argparse: Args parser
     """
     # Primary parser
+
     parser = argparse.ArgumentParser(
-        description='Google Drive Migration Tool.')
+        description='Google Drive Migration Tool.', parents=[tools.argparser])
 
     parser.add_argument('-r', '--root', type=str, default=ROOT_FOLDER,
                         help='Path to folder to start in (eg "D:/test"). Defaults to root Drive directory')
@@ -682,6 +685,8 @@ def main():
     # Args parsing
     parser = build_arg_parser()
     args = parser.parse_args()
+    global FLAGS
+    FLAGS = args
 
     if args.prefix:
         # Set the Drive prefix
