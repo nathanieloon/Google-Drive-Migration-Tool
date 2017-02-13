@@ -1,4 +1,4 @@
-# Google-Drive-Migration-Tool
+# Google Drive Migration Tool (GDMT)
 
 This script was developed to help users migrate between a source and destination
 Google Drive. The script is designed to be used alongside a cloud transfer

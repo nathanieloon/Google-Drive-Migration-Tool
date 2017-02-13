@@ -31,6 +31,7 @@ NEW_DOMAIN = None                                   # New domain to migrate to
 ROOT_FOLDER = PATH_ROOT                             # Root folder to start in for migration
 FLAGS = None                                        # Flags for Google credentials
 
+
 class Drive(object):
     """ Google Drive representation class
 
