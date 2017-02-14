@@ -31,7 +31,6 @@ NEW_DOMAIN = None                                   # New domain to migrate to
 ROOT_FOLDER = PATH_ROOT                             # Root folder to start in for migration
 FLAGS = None                                        # Flags for Google credentials
 
-
 class Drive(object):
     """ Google Drive representation class
 
@@ -248,17 +247,18 @@ class Drive(object):
         """
         # If we don't have a current folder, get one
         if not curr_folder:
-            if not base_folder_path:
-                curr_folder = self.root
+            if not base_folder_path or base_folder_path == src_drive.root.path:
+                curr_folder = src_drive.root
             else:
                 curr_folder = src_drive.get_folder_via_path(base_folder_path)
 
         # Update files in current folder
         file_count = 0
         for file in src_drive.files:
-            if curr_folder.id in file.parents:
-                self.update_info(src_drive=src_drive, path=file.path)
-                file_count += 1
+            if file.path:
+                if curr_folder.id in file.parents:
+                    self.update_info(src_drive=src_drive, path=file.path)
+                    file_count += 1
 
         # Update the current folder
         self.update_info(src_drive=src_drive,
@@ -303,58 +303,78 @@ class Drive(object):
                 to True
 
         """
-        if is_file:
-            src_item = src_drive.get_file_via_path(path)
-            dest_item = self.get_file_via_path(path)
-        else:
-            src_item = src_drive.get_folder_via_path(path)
-            dest_item = self.get_folder_via_path(path)
+        print("Updating", path)
+        if path != self.root.path:
+            if is_file:
+                src_item = src_drive.get_file_via_path(path)
+                dest_item = self.get_file_via_path(path)
+            else:
+                src_item = src_drive.get_folder_via_path(path)
+                dest_item = self.get_folder_via_path(path)
 
-        # Make sure both the source and destination files can be found
-        if not src_item:
-            return "Item could not be found in <{0}>. Skipping.".format(src_drive.name)
-        if not dest_item:
-            return "Item could not be found in <{0}>. Skipping.".format(self.name)
+            # Make sure both the source and destination files can be found
+            if not src_item:
+                return "Item could not be found in <{0}>. Skipping.".format(src_drive.name)
+            if not dest_item:
+                return "Item could not be found in <{0}>. Skipping.".format(self.name)
 
-        try:
-            # Build the updated payload
-            time_body = {'modifiedTime': src_item.last_modified_time}
-
-            # Send the file back
-            time_response = self.service.files().update(fileId=dest_item.id,
-                                                        body=time_body
-                                                        ).execute()
-
-            if UPDATE_PERMISSIONS:
-                # Update the permissions for a given item
-                permissions = src_drive.service.permissions().list(fileId=src_item.id,
-                                                                   fields='permissions(id, emailAddress, displayName, role, type)'
-                                                                   )
-                for permission in permissions:
-                    print(permission)
-
-            if UPDATE_OWNER:
-                # Get the new user email
-                new_user = convert_to_new_domain(
-                    src_item.owner.email, NEW_DOMAIN)
-
+            try:
                 # Build the updated payload
-                user_body = {'emailAddress': new_user,
-                             'role': 'owner',
-                             'type': 'user'}
+                time_body = {'modifiedTime': src_item.last_modified_time}
 
                 # Send the file back
-                user_response = self.service.permissions().create(fileId=dest_item.id,
-                                                                  body=user_body,
-                                                                  sendNotificationEmail=True,
-                                                                  transferOwnership=True
-                                                                  ).execute()
+                time_response = self.service.files().update(fileId=dest_item.id,
+                                                            body=time_body
+                                                            ).execute()
 
-            return "Successfully updated <{0}> in drive <{1}>.".format(dest_item.name, self.name)
+                if UPDATE_PERMISSIONS:
+                    # Update the permissions for a given item
+                    results = src_drive.service.permissions().list(fileId=src_item.id,
+                                                                   fields='permissions(id, emailAddress, displayName, role, type)'
+                                                                   ).execute()
+                    permissions = results.get('permissions', [])
 
-        except (errors.HttpError, error):
-            print("An error occurred: {0}".format(error))
-            sys.exit()
+                    for permission in permissions:
+                        if permission['type'] == 'user' and permission['role'] != 'owner':
+                            print(permission)
+                            # Get the new user email
+                            new_user = convert_to_new_domain(
+                                permission['emailAddress'], NEW_DOMAIN)
+
+                            # Build the updated payload
+                            user_body = {'emailAddress': new_user,
+                                         'role': permission['role'],
+                                         'type': 'user'}
+
+                            # Send the file back
+                            perm_response = self.service.permissions().create(fileId=dest_item.id,
+                                                                      body=user_body,
+                                                                      sendNotificationEmail=False,
+                                                                      transferOwnership=False
+                                                                      ).execute()
+
+                if UPDATE_OWNER:
+                    # Get the new user email
+                    new_user = convert_to_new_domain(
+                        src_item.owner.email, NEW_DOMAIN)
+
+                    # Build the updated payload
+                    user_body = {'emailAddress': new_user,
+                                 'role': 'owner',
+                                 'type': 'user'}
+
+                    # Send the file back
+                    user_response = self.service.permissions().create(fileId=dest_item.id,
+                                                                      body=user_body,
+                                                                      sendNotificationEmail=True,
+                                                                      transferOwnership=True
+                                                                      ).execute()
+
+                return "Successfully updated <{0}> in drive <{1}>.".format(dest_item.name, self.name)
+
+            except (errors.HttpError, error):
+                print("An error occurred: {0}".format(error))
+                sys.exit()
 
     def _generate_paths(self, curr_item=None, curr_path=None):
         """ Generate all the paths for every file and folder in the drive - expensive
@@ -377,6 +397,7 @@ class Drive(object):
 
         for file in self.files:
             path_objects = list(curr_path)
+            
             if curr_path:
                 curr_item = path_objects[-1]
 
@@ -427,6 +448,7 @@ class Drive(object):
                              last_modified_by=None,
                              path=PATH_ROOT)
         self.root = root_folder
+        #self.add_folder(root_folder)
 
         # Get the rest of the drive
         while True:
@@ -686,8 +708,6 @@ def main():
     # Args parsing
     parser = build_arg_parser()
     args = parser.parse_args()
-
-    # Flags for Google Drive
     global FLAGS
     FLAGS = args
 
