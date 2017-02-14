@@ -8,7 +8,8 @@ The script takes a source and destination Drive, and clones the:
 * Last Modifying User
 * Last Modified Date
 * Owner
-* Permissions (TODO)
+* Permissions
+* Activity History (TODO)
 
 from the source to destination Drive.
 
