@@ -188,28 +188,28 @@ class Drive(object):
 
         # Print the current folder
         if curr_folder is self.root:
-            print(prefix + curr_folder.id, curr_folder.name.encode('utf-8') +
-                  " (" + curr_folder.owner.name.encode('utf-8') + ")")
+            print(prefix + curr_folder.id, curr_folder.name +
+                  " (" + curr_folder.owner.name + ")")
         elif verbose:
-            print(prefix + curr_folder.id, curr_folder.name.encode('utf-8') +
-                  " (" + curr_folder.owner.name.encode('utf-8') + ")" +
-                  " (" + curr_folder.last_modified_time.encode('utf-8') + ")", end='')
+            print(prefix + curr_folder.id, curr_folder.name +
+                  " (" + curr_folder.owner.name + ")" +
+                  " (" + curr_folder.last_modified_time + ")", end='')
             if curr_folder.last_modified_by:
-                print(" (" + curr_folder.last_modified_by.email.encode('utf-8') + ")")
+                print(" (" + curr_folder.last_modified_by.email + ")")
         else:
-            print(prefix + curr_folder.name.encode('utf-8'))
+            print(prefix + curr_folder.name)
 
         # Print file(s)
         for file in self.files:
             if curr_folder.id in file.parents:
                 if verbose:
-                    print(prefix + "\t" + file.id, file.name.encode('utf-8') +
-                          " (" + file.owner.name.encode('utf-8') + ")" +
-                          " (" + file.last_modified_time.encode('utf-8') + ")", end='')
+                    print(prefix + "\t" + file.id, file.name +
+                          " (" + file.owner.name + ")" +
+                          " (" + file.last_modified_time + ")", end='')
                     if file.last_modified_by:
-                        print(" (" + file.last_modified_by.email.encode('utf-8') + ")")
+                        print(" (" + file.last_modified_by.email + ")")
                 else:
-                    print(prefix + "\t" + file.name.encode('utf-8'))
+                    print(prefix + "\t" + file.name)
 
         # Print child folder(s)
         for folder in self.folders:
@@ -370,7 +370,7 @@ class Drive(object):
                                                                       transferOwnership=True
                                                                       ).execute()
 
-                return "Successfully updated <{0}> in drive <{1}>.".format(dest_item.name.encode('utf-8'), self.name)
+                return "Successfully updated <{0}> in drive <{1}>.".format(dest_item.name, self.name)
 
             except errors.HttpError, error:
                 print("An error occurred: {0}".format(error))
@@ -627,7 +627,7 @@ def convert_to_new_domain(email, new_domain):
         str: Email address with new domain
 
     """
-    return email.split('@')[0].encode('utf-8') + '@' + new_domain
+    return email.split('@')[0] + '@' + new_domain
 
 
 def get_credentials(src):
