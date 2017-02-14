@@ -372,7 +372,7 @@ class Drive(object):
 
                 return "Successfully updated <{0}> in drive <{1}>.".format(dest_item.name, self.name)
 
-            except errors.HttpError, error:
+            except (errors.HttpError, error):
                 print("An error occurred: {0}".format(error))
                 sys.exit()
 
