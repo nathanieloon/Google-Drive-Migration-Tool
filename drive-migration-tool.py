@@ -13,7 +13,9 @@ import httplib2
 import os
 import sys
 import argparse
+import xml.etree.ElementTree as etree
 
+from xml.dom import minidom
 from apiclient import discovery, errors
 from oauth2client import client
 from oauth2client import tools
@@ -164,6 +166,51 @@ class Drive(object):
                 path_string = path_string + obj.name + "/"
 
         return path_string
+
+    def generate_xml(self, base_folder_path=ROOT_FOLDER, curr_folder=None, curr_node=None, tree=None):
+        """ Save the structure to an XML file type
+
+        Args:
+            base_folder_path (str, optional): Base folder path, defaults to
+                the root folder
+            curr_folder (Folder, optional): Current folder being printed
+
+        """
+        # If we're looking at the base folder, set it as the current folder
+        if not curr_folder:
+            path_objects = self.parse_path(base_folder_path)
+            if not path_objects:
+                # Will already have thrown error message
+                sys.exit()
+            else:
+                curr_folder = path_objects[-1]
+
+                tree = etree.Element('folder')
+                tree.attrib['name'] = curr_folder.name
+                curr_node = tree
+
+        # Print child folder(s)
+        for folder in self.folders:
+            if folder.parents:
+                if curr_folder.id in folder.parents:
+                    curr_node = etree.SubElement(curr_node, 'folder')
+                    curr_node.attrib['name'] = folder.name
+                    curr_node.attrib['owner'] = folder.owner.name
+                    curr_node.attrib['last_modified_time'] = folder.last_modified_time
+                    curr_node.attrib['last_modified_by'] = folder.last_modified_by.name
+
+                    self.generate_xml(curr_folder=folder, curr_node=curr_node, tree=tree)
+
+        # Print file(s)
+        for file in self.files:
+            if curr_folder.id in file.parents:
+                node = etree.SubElement(curr_node, 'file')
+                node.attrib['name'] = file.name
+                node.attrib['owner'] = file.owner.name
+                node.attrib['last_modified_time'] = file.last_modified_time
+                node.attrib['last_modified_by'] = file.last_modified_by.name
+
+        return tree
 
     def print_drive(self, base_folder_path=ROOT_FOLDER, verbose=False, curr_folder=None, prefix="", output_file=None):
         """ Print the drive structure from the given root folder
@@ -403,7 +450,7 @@ class Drive(object):
 
         for file in self.files:
             path_objects = list(curr_path)
-            
+
             if curr_path:
                 curr_item = path_objects[-1]
 
@@ -704,7 +751,9 @@ def build_arg_parser():
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Verbose printing of the tree')
     parser.add_argument('-F', '--printtofile', type=str,
-                        help='Save the tree to a file instead of stdout. Must be used with one of the print options.')
+                        help='Save the tree to a file instead of stdout. Must be used with one of the print Drive options.')
+    parser.add_argument('-x', '--generate-xml', type=str,
+                        help='Output the tree to an XML file. Must be used with one of the print Drive options.')
 
     # Updating permission options
     parser.add_argument('-uo', '--updateowner', action='store_true',
@@ -716,17 +765,23 @@ def build_arg_parser():
 
     return parser
 
-def print_wrapper(root, drive, verbose, printtofile=False):
+def print_wrapper(root, drive, verbose, printtofile=False, generate_xml=False):
     """ Wrapper to print a drive
     """
     # Open a file for output
-    if printtofile:
-        file = open(printtofile, 'w') if args.printtofile else sys.stdout
+    file = open(printtofile, 'w') if printtofile else sys.stdout
 
-    drive.print_drive(root, verbose=verbose, output_file=file)
+    # Choose a print method
+    if generate_xml:
+        output = drive.generate_xml(root)
+        tree = etree.ElementTree(output)
+        tree.write(generate_xml)
+    else:
+        drive.print_drive(root, verbose=verbose, output_file=file)
 
-    if printtofile:
-        print("Output directory of {0} to {1}".format(drive.name, printtofile))
+    # Close the file
+    if printtofile or generate_xml:
+        print("Output directory of {0} to {1}".format(drive.name, printtofile if printtofile else generate_xml))
         file.close()
 
 def main():
@@ -750,13 +805,17 @@ def main():
         global ROOT_FOLDER
         ROOT_FOLDER = args.root
 
+    if (args.printtofile or args.generate_xml) and not (args.printsrc or args.printdest):
+        print("Error: The --printsrc or --printdest options must be used with the --printtofile and --generate-xml options.")
+        sys.exit()
+
     if args.printsrc:
         # Source account credentials
         src_credentials = get_credentials('src')
         src_http = src_credentials.authorize(httplib2.Http())
         src_service = discovery.build('drive', 'v3', http=src_http)
         src_drive = Drive('source drive', src_service)
-        print_wrapper(args.root, src_drive, args.verbose, args.printtofile)
+        print_wrapper(args.root, src_drive, args.verbose, args.printtofile, args.generate_xml)
 
     if args.printdest:
         # Destination account credentials
@@ -764,11 +823,7 @@ def main():
         dest_http = dest_credentials.authorize(httplib2.Http())
         dest_service = discovery.build('drive', 'v3', http=dest_http)
         dest_drive = Drive("destination drive", dest_service)
-        print_wrapper(args.root, src_drive, args.verbose, args.printtofile)
-
-    if args.printtofile and not (args.printsrc or args.printdest):
-        print("Error: The --printsrc or --printdest options must be used with the --printtofile option.")
-        sys.exit()
+        print_wrapper(args.root, src_drive, args.verbose, args.printtofile, args.generate_xml)
 
     if args.updatedrive:
         # Check --newdomain is set
