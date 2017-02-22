@@ -197,7 +197,8 @@ class Drive(object):
                     curr_node.attrib['name'] = folder.name
                     curr_node.attrib['owner'] = folder.owner.name
                     curr_node.attrib['last_modified_time'] = folder.last_modified_time
-                    curr_node.attrib['last_modified_by'] = folder.last_modified_by.name
+                    if folder.last_modified_by:
+                        curr_node.attrib['last_modified_by'] = folder.last_modified_by.name
 
                     self.generate_xml(curr_folder=folder, curr_node=curr_node, tree=tree)
 
@@ -208,7 +209,8 @@ class Drive(object):
                 node.attrib['name'] = file.name
                 node.attrib['owner'] = file.owner.name
                 node.attrib['last_modified_time'] = file.last_modified_time
-                node.attrib['last_modified_by'] = file.last_modified_by.name
+                if file.last_modified_by:
+                    node.attrib['last_modified_by'] = file.last_modified_by.name
 
         return tree
 
