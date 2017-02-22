@@ -165,7 +165,7 @@ class Drive(object):
 
         return path_string
 
-    def print_drive(self, base_folder_path=ROOT_FOLDER, verbose=False, curr_folder=None, prefix="", output_file=None, fname=None):
+    def print_drive(self, base_folder_path=ROOT_FOLDER, verbose=False, curr_folder=None, prefix="", output_file=None):
         """ Print the drive structure from the given root folder
 
         Args:
@@ -177,16 +177,6 @@ class Drive(object):
                 printing
 
         """
-        # File output handling
-        if fname:
-            try:
-                output_file = open(fname, 'w')
-            except IOError:
-                print ("Could not read file: {0}".format(fname))
-                sys.exit()
-        else:
-            output_file = sys.stdout
-
         # If we're looking at the base folder, set it as the current folder
         if not curr_folder:
             path_objects = self.parse_path(base_folder_path)
@@ -198,12 +188,18 @@ class Drive(object):
 
         # Print the current folder
         if curr_folder is self.root:
-            print(prefix + curr_folder.id, curr_folder.name +
+            if verbose:
+                print (prefix + curr_folder.id, end='', file=output_file)
+            else:
+                print (prefix, end='', file=output_file)
+
+            print(curr_folder.name +
                   " (" + curr_folder.owner.name + ")", file=output_file)
         elif verbose:
-            print(prefix + curr_folder.id, curr_folder.name +
+            print(prefix + curr_folder.name +
                   " (" + curr_folder.owner.name + ")" +
                   " (" + curr_folder.last_modified_time + ")", end='', file=output_file)
+
             if curr_folder.last_modified_by:
                 print(" (" + curr_folder.last_modified_by.email + ")", file=output_file)
         else:
@@ -213,7 +209,7 @@ class Drive(object):
         for file in self.files:
             if curr_folder.id in file.parents:
                 if verbose:
-                    print(prefix + "\t" + file.id, file.name +
+                    print(prefix + "\t" + file.name +
                           " (" + file.owner.name + ")" +
                           " (" + file.last_modified_time + ")", end='', file=output_file)
                     if file.last_modified_by:
@@ -226,12 +222,7 @@ class Drive(object):
             if folder.parents:
                 if curr_folder.id in folder.parents:
                     self.print_drive(
-                        verbose=verbose, curr_folder=folder, prefix=prefix + "\t", output_file=output_file, fname=fname)
-
-
-        # Close the file if we've got one
-        if fname:
-            file.close()
+                        verbose=verbose, curr_folder=folder, prefix=prefix + "\t", output_file=output_file)
 
     def get_user_emails(self):
         """ Get all user emails
@@ -690,8 +681,10 @@ def build_arg_parser():
     parser = argparse.ArgumentParser(
         description='Google Drive Migration Tool.', parents=[tools.argparser])
 
+    # Hide all of the Google API options
     for action in parser._actions:
-        action.help = argparse.SUPPRESS
+        if action.dest != 'help':
+            action.help = argparse.SUPPRESS
 
     parser.add_argument('-r', '--root', type=str, default=ROOT_FOLDER,
                         help='Path to folder to start in (eg "D:/test"). Defaults to root Drive directory')
@@ -710,6 +703,8 @@ def build_arg_parser():
     # Verbose printing
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Verbose printing of the tree')
+    parser.add_argument('-F', '--printtofile', type=str,
+                        help='Save the tree to a file instead of stdout. Must be used with one of the print options.')
 
     # Updating permission options
     parser.add_argument('-uo', '--updateowner', action='store_true',
@@ -737,7 +732,7 @@ def main():
     if args.root:
         # Set the root folder
         if PATH_ROOT not in args.root:
-            print("The Drive prefix {0} is not in the supplied path.".format(PATH_ROOT))
+            print("Error: The Drive prefix {0} is not in the supplied path.".format(PATH_ROOT))
             sys.exit()
 
         global ROOT_FOLDER
@@ -749,7 +744,14 @@ def main():
         src_http = src_credentials.authorize(httplib2.Http())
         src_service = discovery.build('drive', 'v3', http=src_http)
         src_drive = Drive('source drive', src_service)
-        src_drive.print_drive(args.root, verbose=args.verbose)
+
+        file = open(args.printtofile, 'w') if args.printtofile else sys.stdout
+
+        src_drive.print_drive(args.root, verbose=args.verbose, output_file=file)
+
+        print("Output tree to {0}".format(args.printtofile))
+        if args.printtofile: 
+            file.close()
 
     if args.printdest:
         # Destination account credentials
@@ -757,7 +759,18 @@ def main():
         dest_http = dest_credentials.authorize(httplib2.Http())
         dest_service = discovery.build('drive', 'v3', http=dest_http)
         dest_drive = Drive("destination drive", dest_service)
-        dest_drive.print_drive(args.root, verbose=args.verbose)
+
+        file = open(args.printtofile, 'w') if args.printtofile else sys.stdout
+
+        dest_drive.print_drive(args.root, verbose=args.verbose, output_file=file)
+
+        print("Output tree to {0}".format(args.printtofile))
+        if args.printtofile: 
+            file.close()
+
+    if args.printtofile and not (args.printsrc or args.printdest):
+        print("Error: The --printsrc or --printdest options must be used with the --printtofile option.")
+        sys.exit()
 
     if args.updatedrive:
         # Check --newdomain is set
