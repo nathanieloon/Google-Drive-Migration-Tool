@@ -13,7 +13,9 @@ import httplib2
 import os
 import sys
 import argparse
+import xml.etree.ElementTree as etree
 
+from xml.dom import minidom
 from apiclient import discovery, errors
 from oauth2client import client
 from oauth2client import tools
@@ -165,7 +167,54 @@ class Drive(object):
 
         return path_string
 
-    def print_drive(self, base_folder_path=ROOT_FOLDER, verbose=False, curr_folder=None, prefix=""):
+    def generate_xml(self, base_folder_path=ROOT_FOLDER, curr_folder=None, curr_node=None, tree=None):
+        """ Save the structure to an XML file type
+
+        Args:
+            base_folder_path (str, optional): Base folder path, defaults to
+                the root folder
+            curr_folder (Folder, optional): Current folder being printed
+
+        """
+        # If we're looking at the base folder, set it as the current folder
+        if not curr_folder:
+            path_objects = self.parse_path(base_folder_path)
+            if not path_objects:
+                # Will already have thrown error message
+                sys.exit()
+            else:
+                curr_folder = path_objects[-1]
+
+                tree = etree.Element('folder')
+                tree.attrib['name'] = curr_folder.name
+                curr_node = tree
+
+        # Print child folder(s)
+        for folder in self.folders:
+            if folder.parents:
+                if curr_folder.id in folder.parents:
+                    curr_node = etree.SubElement(curr_node, 'folder')
+                    curr_node.attrib['name'] = folder.name
+                    curr_node.attrib['owner'] = folder.owner.name
+                    curr_node.attrib['last_modified_time'] = folder.last_modified_time
+                    if folder.last_modified_by:
+                        curr_node.attrib['last_modified_by'] = folder.last_modified_by.name
+
+                    self.generate_xml(curr_folder=folder, curr_node=curr_node, tree=tree)
+
+        # Print file(s)
+        for file in self.files:
+            if curr_folder.id in file.parents:
+                node = etree.SubElement(curr_node, 'file')
+                node.attrib['name'] = file.name
+                node.attrib['owner'] = file.owner.name
+                node.attrib['last_modified_time'] = file.last_modified_time
+                if file.last_modified_by:
+                    node.attrib['last_modified_by'] = file.last_modified_by.name
+
+        return tree
+
+    def print_drive(self, base_folder_path=ROOT_FOLDER, verbose=False, curr_folder=None, prefix="", output_file=None):
         """ Print the drive structure from the given root folder
 
         Args:
@@ -188,35 +237,41 @@ class Drive(object):
 
         # Print the current folder
         if curr_folder is self.root:
-            print(prefix + curr_folder.id, curr_folder.name +
-                  " (" + curr_folder.owner.name + ")")
+            if verbose:
+                print (prefix + curr_folder.id, end='', file=output_file)
+            else:
+                print (prefix, end='', file=output_file)
+
+            print(curr_folder.name +
+                  " (" + curr_folder.owner.name + ")", file=output_file)
         elif verbose:
-            print(prefix + curr_folder.id, curr_folder.name +
+            print(prefix + curr_folder.name +
                   " (" + curr_folder.owner.name + ")" +
-                  " (" + curr_folder.last_modified_time + ")", end='')
+                  " (" + curr_folder.last_modified_time + ")", end='', file=output_file)
+
             if curr_folder.last_modified_by:
-                print(" (" + curr_folder.last_modified_by.email + ")")
+                print(" (" + curr_folder.last_modified_by.email + ")", file=output_file)
         else:
-            print(prefix + curr_folder.name)
+            print(prefix + curr_folder.name, file=output_file)
 
         # Print file(s)
         for file in self.files:
             if curr_folder.id in file.parents:
                 if verbose:
-                    print(prefix + "\t" + file.id, file.name +
+                    print(prefix + "\t" + file.name +
                           " (" + file.owner.name + ")" +
-                          " (" + file.last_modified_time + ")", end='')
+                          " (" + file.last_modified_time + ")", end='', file=output_file)
                     if file.last_modified_by:
-                        print(" (" + file.last_modified_by.email + ")")
+                        print(" (" + file.last_modified_by.email + ")", file=output_file)
                 else:
-                    print(prefix + "\t" + file.name)
+                    print(prefix + "\t" + file.name, file=output_file)
 
         # Print child folder(s)
         for folder in self.folders:
             if folder.parents:
                 if curr_folder.id in folder.parents:
                     self.print_drive(
-                        verbose=verbose, curr_folder=folder, prefix=prefix + "\t")
+                        verbose=verbose, curr_folder=folder, prefix=prefix + "\t", output_file=output_file)
 
     def get_user_emails(self):
         """ Get all user emails
@@ -397,7 +452,7 @@ class Drive(object):
 
         for file in self.files:
             path_objects = list(curr_path)
-            
+
             if curr_path:
                 curr_item = path_objects[-1]
 
@@ -675,16 +730,21 @@ def build_arg_parser():
     parser = argparse.ArgumentParser(
         description='Google Drive Migration Tool.', parents=[tools.argparser])
 
+    # Hide all of the Google API options
+    for action in parser._actions:
+        if action.dest != 'help':
+            action.help = argparse.SUPPRESS
+
     parser.add_argument('-r', '--root', type=str, default=ROOT_FOLDER,
                         help='Path to folder to start in (eg "D:/test"). Defaults to root Drive directory')
-    parser.add_argument('-p', '--prefix', type=str,
+    parser.add_argument('-f', '--prefix', type=str,
                         help='Prefix letter for the drive (eg "D")')
 
     # Function group
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('-s', '--printsrc', action='store_true',
+    group.add_argument('-p', '--printsrc', action='store_true',
                        help='Print the source Drive')
-    group.add_argument('-d', '--printdest', action='store_true',
+    group.add_argument('-P', '--printdest', action='store_true',
                        help='Print the destination Drive')
     group.add_argument('-u', '--updatedrive', action='store_true',
                        help='Update the destination Drive using the meta data from the source Drive')
@@ -692,6 +752,10 @@ def build_arg_parser():
     # Verbose printing
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Verbose printing of the tree')
+    parser.add_argument('-F', '--printtofile', type=str,
+                        help='Save the tree to a file instead of stdout. Must be used with one of the print Drive options.')
+    parser.add_argument('-x', '--generate-xml', type=str,
+                        help='Output the tree to an XML file. Must be used with one of the print Drive options.')
 
     # Updating permission options
     parser.add_argument('-uo', '--updateowner', action='store_true',
@@ -703,6 +767,24 @@ def build_arg_parser():
 
     return parser
 
+def print_wrapper(root, drive, verbose, printtofile=False, generate_xml=False):
+    """ Wrapper to print a drive
+    """
+    # Open a file for output
+    file = open(printtofile, 'w') if printtofile else sys.stdout
+
+    # Choose a print method
+    if generate_xml:
+        output = drive.generate_xml(root)
+        tree = etree.ElementTree(output)
+        tree.write(generate_xml)
+    else:
+        drive.print_drive(root, verbose=verbose, output_file=file)
+
+    # Close the file
+    if printtofile or generate_xml:
+        print("Output directory of {0} to {1}".format(drive.name, printtofile if printtofile else generate_xml))
+        file.close()
 
 def main():
     # Args parsing
@@ -719,11 +801,15 @@ def main():
     if args.root:
         # Set the root folder
         if PATH_ROOT not in args.root:
-            print("The Drive prefix {0} is not in the supplied path.".format(PATH_ROOT))
+            print("Error: The Drive prefix {0} is not in the supplied path.".format(PATH_ROOT))
             sys.exit()
 
         global ROOT_FOLDER
         ROOT_FOLDER = args.root
+
+    if (args.printtofile or args.generate_xml) and not (args.printsrc or args.printdest):
+        print("Error: The --printsrc or --printdest options must be used with the --printtofile and --generate-xml options.")
+        sys.exit()
 
     if args.printsrc:
         # Source account credentials
@@ -731,7 +817,7 @@ def main():
         src_http = src_credentials.authorize(httplib2.Http())
         src_service = discovery.build('drive', 'v3', http=src_http)
         src_drive = Drive('source drive', src_service)
-        src_drive.print_drive(args.root, verbose=args.verbose)
+        print_wrapper(args.root, src_drive, args.verbose, args.printtofile, args.generate_xml)
 
     if args.printdest:
         # Destination account credentials
@@ -739,7 +825,7 @@ def main():
         dest_http = dest_credentials.authorize(httplib2.Http())
         dest_service = discovery.build('drive', 'v3', http=dest_http)
         dest_drive = Drive("destination drive", dest_service)
-        dest_drive.print_drive(args.root, verbose=args.verbose)
+        print_wrapper(args.root, src_drive, args.verbose, args.printtofile, args.generate_xml)
 
     if args.updatedrive:
         # Check --newdomain is set
