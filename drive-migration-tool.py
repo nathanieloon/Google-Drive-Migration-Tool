@@ -716,6 +716,18 @@ def build_arg_parser():
 
     return parser
 
+def print_wrapper(root, drive, verbose, printtofile=False):
+    """ Wrapper to print a drive
+    """
+    # Open a file for output
+    if printtofile:
+        file = open(printtofile, 'w') if args.printtofile else sys.stdout
+
+    drive.print_drive(root, verbose=verbose, output_file=file)
+
+    if printtofile:
+        print("Output directory of {0} to {1}".format(drive.name, printtofile))
+        file.close()
 
 def main():
     # Args parsing
@@ -744,14 +756,7 @@ def main():
         src_http = src_credentials.authorize(httplib2.Http())
         src_service = discovery.build('drive', 'v3', http=src_http)
         src_drive = Drive('source drive', src_service)
-
-        file = open(args.printtofile, 'w') if args.printtofile else sys.stdout
-
-        src_drive.print_drive(args.root, verbose=args.verbose, output_file=file)
-
-        print("Output tree to {0}".format(args.printtofile))
-        if args.printtofile: 
-            file.close()
+        print_wrapper(args.root, src_drive, args.verbose, args.printtofile)
 
     if args.printdest:
         # Destination account credentials
@@ -759,14 +764,7 @@ def main():
         dest_http = dest_credentials.authorize(httplib2.Http())
         dest_service = discovery.build('drive', 'v3', http=dest_http)
         dest_drive = Drive("destination drive", dest_service)
-
-        file = open(args.printtofile, 'w') if args.printtofile else sys.stdout
-
-        dest_drive.print_drive(args.root, verbose=args.verbose, output_file=file)
-
-        print("Output tree to {0}".format(args.printtofile))
-        if args.printtofile: 
-            file.close()
+        print_wrapper(args.root, src_drive, args.verbose, args.printtofile)
 
     if args.printtofile and not (args.printsrc or args.printdest):
         print("Error: The --printsrc or --printdest options must be used with the --printtofile option.")
