@@ -64,15 +64,35 @@ class Drive(object):
         self.name = name
         self.folders = set()
         self.root = None
+        self.owner = None
         self.files = set()
         self.users = set()
         self.service = service
 
+    def build_drive(self):
+        """ Wrapper for building the drive
+        """
         # Initialise the drive
         self._build_drive()
         print("Generating paths for <{0}>.".format(self.name))
         self._generate_paths()  # This is expensive, needs optimisation
         print("Finished generating paths for <{0}>.".format(self.name))
+
+    def get_credentials(self):
+        """ return the drive credentials being used for this drive
+        """
+        # Return the owner if the drive is built, if not then grab it
+        if self.owner:
+            return self.owner
+
+        # Get the user
+        response = self.service.about().get(fields="user").execute()
+
+        # Make a new user object
+        owner = User(name=response['user']['displayName'], email=response[
+                     'user']['emailAddress'])
+
+        return owner
 
     def add_folder(self, folder):
         """ Add a folder to the drive
@@ -138,8 +158,6 @@ class Drive(object):
         if not any(obj.name == path_list[-1] for obj in path_objects) or len(path_objects) == 0:
             print("Path <{0}> could not be found. Only found: <{1}>".format(
                 PATH_ROOT + path, path_objects))
-            for obj in path_objects:
-                print(obj)
             return None
 
         # Return the path objects
@@ -308,6 +326,9 @@ class Drive(object):
                 curr_folder = src_drive.root
             else:
                 curr_folder = src_drive.get_folder_via_path(base_folder_path)
+                # If we can't find the root path, bail out
+                if not curr_folder:
+                    sys.exit
 
         # Update files in current folder
         file_count = 0
@@ -393,7 +414,6 @@ class Drive(object):
 
                     for permission in permissions:
                         if permission['type'] == 'user' and permission['role'] != 'owner':
-                            print(permission)
                             # Get the new user email
                             new_user = convert_to_new_domain(
                                 permission['emailAddress'], NEW_DOMAIN)
@@ -411,27 +431,40 @@ class Drive(object):
                                                                       ).execute()
 
                 if UPDATE_OWNER:
-                    # Get the new user email
-                    new_user = convert_to_new_domain(
-                        src_item.owner.email, NEW_DOMAIN)
+                    results = src_drive.service.permissions().list(fileId=src_item.id,
+                                                                   fields='permissions(emailAddress, role, type)'
+                                                                   ).execute()
+                    permissions = results.get('permissions', [])
 
-                    # Build the updated payload
-                    user_body = {'emailAddress': new_user,
-                                 'role': 'owner',
-                                 'type': 'user'}
+                    for permission in permissions:
+                        if permission['type'] == 'user' and permission['role'] == 'owner':
+                            curr_owner = permission['emailAddress']
 
-                    # Send the file back
-                    user_response = self.service.permissions().create(fileId=dest_item.id,
-                                                                      body=user_body,
-                                                                      sendNotificationEmail=True,
-                                                                      transferOwnership=True
-                                                                      ).execute()
+                    if curr_owner != src_drive.owner.email:
+                        # Get the new user email
+                        new_user = convert_to_new_domain(
+                            src_item.owner.email, NEW_DOMAIN)
+
+                        # Build the updated payload
+                        user_body = {'emailAddress': new_user,
+                                     'role': 'owner',
+                                     'type': 'user'}
+
+                        # Send the file back
+                        try:
+                            user_response = self.service.permissions().create(fileId=dest_item.id,
+                                                                              body=user_body,
+                                                                              sendNotificationEmail=True,
+                                                                              transferOwnership=True
+                                                                              ).execute()
+                        except:
+                            print("Error updating owner. The user may not exist in the new Drive.")
 
                 return "Successfully updated <{0}> in drive <{1}>.".format(dest_item.name, self.name)
 
-            except (errors.HttpError, error):
-                print("An error occurred: {0}".format(error))
-                sys.exit()
+            except:
+                # TODO: Handle this properly
+                print("An error occurred")
 
     def _generate_paths(self, curr_item=None, curr_path=None):
         """ Generate all the paths for every file and folder in the drive - expensive
@@ -495,8 +528,11 @@ class Drive(object):
         # Get the root "My Drive" folder first
         response = self.service.files().get(fileId='root',
                                             fields="id, mimeType, name, owners").execute()
+        # Set the owner
         owner = User(name=response['owners'][0]['displayName'], email=response[
                      'owners'][0]['emailAddress'])
+        self.owner = owner
+        # Set the root
         root_folder = Folder(id=response['id'],
                              name=response['name'],
                              owner=owner,
@@ -695,7 +731,7 @@ def convert_to_new_domain(email, new_domain):
     return email.split('@')[0] + '@' + new_domain
 
 
-def get_credentials(src):
+def get_credentials(src, reset=False):
     """Gets valid user credentials from storage.
 
     If nothing has been stored, or if the stored credentials are invalid,
@@ -717,7 +753,7 @@ def get_credentials(src):
 
     store = Storage(credential_path)
     credentials = store.get()
-    if not credentials or credentials.invalid:
+    if not credentials or credentials.invalid or reset:
         flow = client.flow_from_clientsecrets(CLIENT_SECRET_FILE, SCOPES)
         flow.user_agent = APPLICATION_NAME
         if FLAGS:
@@ -758,6 +794,10 @@ def build_arg_parser():
                        help='Print the destination Drive')
     group.add_argument('-u', '--updatedrive', action='store_true',
                        help='Update the destination Drive using the meta data from the source Drive')
+    group.add_argument('-s', '--status', action='store_true',
+                       help='Display the current logins for the Drives')
+    group.add_argument('-S', '--setup', action='store_true',
+                       help='Setup the logins for the Drives')
 
     # Verbose printing
     parser.add_argument('-v', '--verbose', action='store_true',
@@ -770,7 +810,7 @@ def build_arg_parser():
     # Updating permission options
     parser.add_argument('-uo', '--updateowner', action='store_true',
                         help='Flag for updating the owner to the new domain')
-    parser.add_argument('-n', '--newdomain', type=str,
+    parser.add_argument('-d', '--newdomain', type=str,
                         help='Destination domain (eg "test.com")')
     parser.add_argument('-up', '--updateperm', action='store_true',
                         help='Flag for updating the permissions for the file to the new domain')
@@ -795,6 +835,23 @@ def print_wrapper(root, drive, verbose, printtofile=False, generate_xml=False):
     if printtofile or generate_xml:
         print("Output directory of {0} to {1}".format(drive.name, printtofile if printtofile else generate_xml))
         file.close()
+
+def connect_to_drive(source, build=True, reset_cred=False):
+    """ Function to connect to a drive
+
+    Return:
+        drive
+    """
+    credentials = get_credentials(source, reset_cred)
+    http = credentials.authorize(httplib2.Http())
+    service = discovery.build('drive', 'v3', http=http)
+    drive = Drive(source, service)
+
+    if build:
+        drive.build_drive()
+
+    return drive
+
 
 def main():
     # Args parsing
@@ -821,20 +878,37 @@ def main():
         print("Error: The --printsrc or --printdest options must be used with the --printtofile and --generate-xml options.")
         sys.exit()
 
+    if args.setup:
+        # Source account credentials
+        src_drive = connect_to_drive('src', build=False, reset_cred=True)
+
+        # Destination account credentials
+        dest_drive = connect_to_drive('dest', build=False, reset_cred=True)
+
+        src_drive.show_credentials()
+        dest_drive.show_credentials()
+
+    if args.status:
+        # Source account credentials
+        src_drive = connect_to_drive('src', build=False)
+
+        # Destination account credentials
+        dest_drive = connect_to_drive('dest', build=False)
+
+        src_owner = src_drive.get_credentials()
+        dest_owner = dest_drive.get_credentials()
+
+        print("The <{0}> Drive is logged into <{1} ({2})>".format(src_drive.name, src_owner.name, src_owner.email))
+        print("The <{0}> Drive is logged into <{1} ({2})>".format(dest_drive.name, dest_owner.name, dest_owner.email))
+
     if args.printsrc:
         # Source account credentials
-        src_credentials = get_credentials('src')
-        src_http = src_credentials.authorize(httplib2.Http())
-        src_service = discovery.build('drive', 'v3', http=src_http)
-        src_drive = Drive('source drive', src_service)
+        src_drive = connect_to_drive('src')
         print_wrapper(args.root, src_drive, args.verbose, args.printtofile, args.generate_xml)
 
     if args.printdest:
         # Destination account credentials
-        dest_credentials = get_credentials('dest')
-        dest_http = dest_credentials.authorize(httplib2.Http())
-        dest_service = discovery.build('drive', 'v3', http=dest_http)
-        dest_drive = Drive("destination drive", dest_service)
+        dest_drive = connect_to_drive('dest')
         print_wrapper(args.root, src_drive, args.verbose, args.printtofile, args.generate_xml)
 
     if args.updatedrive:
@@ -845,16 +919,10 @@ def main():
         print("Updating...")
 
         # Source account credentials
-        src_credentials = get_credentials('src')
-        src_http = src_credentials.authorize(httplib2.Http())
-        src_service = discovery.build('drive', 'v3', http=src_http)
-        src_drive = Drive('source drive', src_service)
+        src_drive = connect_to_drive('src')
 
         # Destination account credentials
-        dest_credentials = get_credentials('dest')
-        dest_http = dest_credentials.authorize(httplib2.Http())
-        dest_service = discovery.build('drive', 'v3', http=dest_http)
-        dest_drive = Drive('destination drive', dest_service)
+        dest_drive = connect_to_drive('dest')
 
         # Check if we're updating the user
         if (args.updateowner or args.updateperm) and args.newdomain:
