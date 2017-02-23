@@ -196,6 +196,7 @@ class Drive(object):
                     curr_node = etree.SubElement(curr_node, 'folder')
                     curr_node.attrib['name'] = folder.name
                     curr_node.attrib['owner'] = folder.owner.name
+                    curr_node.attrib['created_time'] = folder.created_time
                     curr_node.attrib['last_modified_time'] = folder.last_modified_time
                     if folder.last_modified_by:
                         curr_node.attrib['last_modified_by'] = folder.last_modified_by.name
@@ -208,6 +209,7 @@ class Drive(object):
                 node = etree.SubElement(curr_node, 'file')
                 node.attrib['name'] = file.name
                 node.attrib['owner'] = file.owner.name
+                node.attrib['created_time'] = file.created_time
                 node.attrib['last_modified_time'] = file.last_modified_time
                 if file.last_modified_by:
                     node.attrib['last_modified_by'] = file.last_modified_by.name
@@ -511,7 +513,7 @@ class Drive(object):
             response = self.service.files().list(q="trashed = false",
                                                  pageSize=1000,
                                                  pageToken=page_token,
-                                                 fields="nextPageToken, files(id, mimeType, name, owners, parents, modifiedTime, lastModifyingUser)").execute()
+                                                 fields="nextPageToken, files(id, mimeType, name, owners, parents, modifiedTime, lastModifyingUser, createdTime)").execute()
             results = response.get('files', [])
 
             # Build folder structure in memory
@@ -541,6 +543,7 @@ class Drive(object):
                                     name=result['name'],
                                     owner=owner,
                                     parents=parents,
+                                    created_time=result['createdTime'],
                                     last_modified_time=result['modifiedTime'],
                                     last_modified_by=modified_by)
                     self.add_folder(folder)
@@ -549,6 +552,7 @@ class Drive(object):
                                 name=result['name'],
                                 owner=owner,
                                 parents=parents,
+                                created_time=result['createdTime'],
                                 last_modified_time=result['modifiedTime'],
                                 last_modified_by=modified_by,
                                 mime_type=result['mimeType'])
@@ -593,6 +597,7 @@ class File(object):
         name (str): Name of the file
         owner (User): Owner of the file
         parents ([str]): List of parent IDs
+        created_time (str): Time/date created
         last_modified_time (str): "Last modified time"
         last_modified_by (User): "Last modified by" user
         mime_type (str): MIME Type of the file
@@ -602,6 +607,7 @@ class File(object):
         name (str): Name of the file
         owner (User): Owner of the file
         parents ([str]): List of parent IDs
+        created_time (str): Time/date created
         last_modified_time (str): "Last modified time"
         last_modified_by (User): "Last modified by" user
         mime_type (str): MIME Type of the file
@@ -609,11 +615,12 @@ class File(object):
 
     """
 
-    def __init__(self, id, name, owner, parents, last_modified_time, last_modified_by, mime_type):
+    def __init__(self, id, name, owner, parents, created_time, last_modified_time, last_modified_by, mime_type):
         self.id = id
         self.name = name
         self.parents = parents
         self.owner = owner
+        self.created_time = created_time
         self.last_modified_time = last_modified_time
         self.last_modified_by = last_modified_by
         self.mime_type = mime_type
@@ -637,6 +644,7 @@ class Folder(object):
         name (str): Name of the folder
         owner (User): Owner of the folder
         parents ([str], optional): List of parent IDs
+        created_time (str): Time/date created
         last_modified_time (str, optional): "Last modified time"
         last_modified_by (User, optional): "Last modified by" user
         path (str, optional): Path to the folder within the Drive
@@ -646,17 +654,19 @@ class Folder(object):
         name (str): Name of the folder
         owner (User): Owner of the folder
         parents ([str]): List of parent IDs
+        created_time (str): Time/date created
         last_modified_time (str): "Last modified time"
         last_modified_by (User): "Last modified by" user
         path (str): Path to the folder within the Drive
 
     """
 
-    def __init__(self, id, name, owner, parents=None, last_modified_time=None, last_modified_by=None, path=None):
+    def __init__(self, id, name, owner, parents=None, created_time=None, last_modified_time=None, last_modified_by=None, path=None):
         self.id = id
         self.name = name
         self.parents = parents
         self.owner = owner
+        self.created_time = created_time
         self.last_modified_time = last_modified_time
         self.last_modified_by = last_modified_by
 
