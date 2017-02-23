@@ -24,14 +24,10 @@ Alternatively, you should only need the Google Drive API library:
 ` pip install --upgrade google-api-python-client`
 
 ## Usage
-I recommend you run the --printsrc then --printdest options independently, because those will give you the prompts to login with a Google Account.
-
-If you run the update option from the get-go, you will be prompted to login with the source account, then the destination account.
-
 ``` 
-usage: drive-migration-tool.py [-h] [-r ROOT] [-f PREFIX] (-p | -P | -u) [-v]
-                               [-F PRINTTOFILE] [-x GENERATE_XML] [-uo]
-                               [-n NEWDOMAIN] [-up]
+usage: drive-migration-tool.py [-h] [-r ROOT] [-f PREFIX]
+                               (-p | -P | -u | -s | -S) [-v] [-F PRINTTOFILE]
+                               [-x GENERATE_XML] [-uo] [-d NEWDOMAIN] [-up]
 
 Google Drive Migration Tool.
 
@@ -45,6 +41,8 @@ optional arguments:
   -P, --printdest       Print the destination Drive
   -u, --updatedrive     Update the destination Drive using the meta data from
                         the source Drive
+  -s, --status          Display the current logins for the Drives
+  -S, --setup           Setup the logins for the Drives
   -v, --verbose         Verbose printing of the tree
   -F PRINTTOFILE, --printtofile PRINTTOFILE
                         Save the tree to a file instead of stdout. Must be
