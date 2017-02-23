@@ -21,37 +21,39 @@ Requirements can be installed with the command:
 ` pip install -r requirements.txt `
 
 Alternatively, you should only need the Google Drive API library:
-` pip install --upgrade google-api-python-client `
+` pip install --upgrade google-api-python-client`
 
 ## Usage
-> usage: drive-migration-tool.py [-h] [-r ROOT] [-f PREFIX] (-p | -P | -u) [-v]
->                                [-F PRINTTOFILE] [-x GENERATE_XML] [-uo]
->                                [-n NEWDOMAIN] [-up]
-> 
-> Google Drive Migration Tool.
-> 
-> optional arguments:
->   -h, --help            show this help message and exit
->   -r ROOT, --root ROOT  Path to folder to start in (eg "D:/test"). Defaults to
->                         root Drive directory
->   -f PREFIX, --prefix PREFIX
->                         Prefix letter for the drive (eg "D")
->   -p, --printsrc        Print the source Drive
->   -P, --printdest       Print the destination Drive
->   -u, --updatedrive     Update the destination Drive using the meta data from
->                         the source Drive
->   -v, --verbose         Verbose printing of the tree
->   -F PRINTTOFILE, --printtofile PRINTTOFILE
->                         Save the tree to a file instead of stdout. Must be
->                         used with one of the print Drive options.
->   -x GENERATE_XML, --generate-xml GENERATE_XML
->                         Output the tree to an XML file. Must be used with one
->                         of the print Drive options.
->   -uo, --updateowner    Flag for updating the owner to the new domain
->   -n NEWDOMAIN, --newdomain NEWDOMAIN
->                         Destination domain (eg "test.com")
->   -up, --updateperm     Flag for updating the permissions for the file to the
->                         new domain
+``` 
+usage: drive-migration-tool.py [-h] [-r ROOT] [-f PREFIX] (-p | -P | -u) [-v]
+                               [-F PRINTTOFILE] [-x GENERATE_XML] [-uo]
+                               [-n NEWDOMAIN] [-up]
+
+Google Drive Migration Tool.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -r ROOT, --root ROOT  Path to folder to start in (eg "D:/test"). Defaults to
+                        root Drive directory
+  -f PREFIX, --prefix PREFIX
+                        Prefix letter for the drive (eg "D")
+  -p, --printsrc        Print the source Drive
+  -P, --printdest       Print the destination Drive
+  -u, --updatedrive     Update the destination Drive using the meta data from
+                        the source Drive
+  -v, --verbose         Verbose printing of the tree
+  -F PRINTTOFILE, --printtofile PRINTTOFILE
+                        Save the tree to a file instead of stdout. Must be
+                        used with one of the print Drive options.
+  -x GENERATE_XML, --generate-xml GENERATE_XML
+                        Output the tree to an XML file. Must be used with one
+                        of the print Drive options.
+  -uo, --updateowner    Flag for updating the owner to the new domain
+  -n NEWDOMAIN, --newdomain NEWDOMAIN
+                        Destination domain (eg "test.com")
+  -up, --updateperm     Flag for updating the permissions for the file to the
+                        new domain
+```
 
 ## Notes
 * The source and destination drives must have identical hierarchies for this script to work
