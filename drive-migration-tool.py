@@ -123,7 +123,7 @@ class Drive(object):
             return [self.root]
 
         # Strip out the prefix
-        path = path.strip(PATH_ROOT)
+        path = path.replace(PATH_ROOT, '')
         path_list = path.split('/')
 
         # Build the list of path objects
