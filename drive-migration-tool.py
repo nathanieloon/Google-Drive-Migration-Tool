@@ -885,8 +885,11 @@ def main():
         # Destination account credentials
         dest_drive = connect_to_drive('dest', build=False, reset_cred=True)
 
-        src_drive.show_credentials()
-        dest_drive.show_credentials()
+        src_owner = src_drive.get_credentials()
+        dest_owner = dest_drive.get_credentials()
+
+        print("The <{0}> Drive is logged into <{1} ({2})>".format(src_drive.name, src_owner.name, src_owner.email))
+        print("The <{0}> Drive is logged into <{1} ({2})>".format(dest_drive.name, dest_owner.name, dest_owner.email))
 
     if args.status:
         # Source account credentials
