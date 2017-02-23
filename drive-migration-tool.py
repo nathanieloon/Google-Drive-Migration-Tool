@@ -909,7 +909,7 @@ def main():
     if args.printdest:
         # Destination account credentials
         dest_drive = connect_to_drive('dest')
-        print_wrapper(args.root, src_drive, args.verbose, args.printtofile, args.generate_xml)
+        print_wrapper(args.root, dest_drive, args.verbose, args.printtofile, args.generate_xml)
 
     if args.updatedrive:
         # Check --newdomain is set
