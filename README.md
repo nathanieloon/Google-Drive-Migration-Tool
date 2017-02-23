@@ -53,7 +53,7 @@ optional arguments:
                         Output the tree to an XML file. Must be used with one
                         of the print Drive options.
   -uo, --updateowner    Flag for updating the owner to the new domain
-  -n NEWDOMAIN, --newdomain NEWDOMAIN
+  -d NEWDOMAIN, --newdomain NEWDOMAIN
                         Destination domain (eg "test.com")
   -up, --updateperm     Flag for updating the permissions for the file to the
                         new domain
