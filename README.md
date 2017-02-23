@@ -24,6 +24,10 @@ Alternatively, you should only need the Google Drive API library:
 ` pip install --upgrade google-api-python-client`
 
 ## Usage
+I recommend you run the --printsrc then --printdest options independently, because those will give you the prompts to login with a Google Account.
+
+If you run the update option from the get-go, you will be prompted to login with the source account, then the destination account.
+
 ``` 
 usage: drive-migration-tool.py [-h] [-r ROOT] [-f PREFIX] (-p | -P | -u) [-v]
                                [-F PRINTTOFILE] [-x GENERATE_XML] [-uo]
