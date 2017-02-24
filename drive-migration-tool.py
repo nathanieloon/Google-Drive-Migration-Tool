@@ -13,6 +13,7 @@ import httplib2
 import os
 import sys
 import argparse
+import logging
 import xml.etree.ElementTree as etree
 
 from xml.dom import minidom
@@ -862,6 +863,11 @@ def connect_to_drive(source, build=True, reset_cred=False):
 
 
 def main():
+    # Setup logger
+    logging.basicConfig(filename='example.log', level=logging.DEBUG)
+    # Suppress all the google error messages
+    logging.getLogger('googleapiclient').setLevel(logging.CRITICAL)
+
     # Args parsing
     parser = build_arg_parser()
     args = parser.parse_args()
@@ -927,7 +933,7 @@ def main():
         if (args.updateowner or args.updateperm) and args.newdomain is None:
             parser.error("--updateuser and --updateperm require --newdomain")
 
-        print("Updating...")
+        logging.info("Updating...")
 
         # Source account credentials
         src_drive = connect_to_drive('src')
