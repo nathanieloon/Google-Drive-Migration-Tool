@@ -5,7 +5,6 @@ Google Drive. The script is designed to be used alongside a cloud transfer
 service such as [Multcloud](https://www.multcloud.com/home).
 
 The script takes a source and destination Drive, and clones the:
-* Last Modifying User
 * Last Modified Date
 * Owner
 * Permissions
@@ -60,6 +59,6 @@ optional arguments:
 ```
 
 ## Notes
-* The source and destination drives must have identical hierarchies for this script to work
-* If there are duplicate files (ie same name, same path) then only one of the files will be updated
-* The same users must exist in the destination directory (eg `john.smith` must exist in both `@source.com`, and `@dest.com`)
+* The source and destination drives must have identical hierarchies for this script to work.
+* If there are duplicate files (ie same name, same path) then only one of the files will be updated.
+* The same users must exist in the destination directory (eg `john.smith` must exist in both `@source.com`, and `@dest.com`). If a user does not exist in the destination drive then the update will skip any permission or ownership association with that user.
