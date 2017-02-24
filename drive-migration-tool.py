@@ -335,12 +335,15 @@ class Drive(object):
         for file in src_drive.files:
             if file.path:
                 if curr_folder.id in file.parents:
-                    self.update_info(src_drive=src_drive, path=file.path)
+                    file_result = self.update_info(src_drive=src_drive, path=file.path)
+                    print(file_result)
                     file_count += 1
 
         # Update the current folder
-        self.update_info(src_drive=src_drive,
-                         path=curr_folder.path, is_file=False)
+        folder_result = self.update_info(src_drive=src_drive,
+                                         path=curr_folder.path,
+                                         is_file=False)
+        print(folder_result)
 
         print("Updated <{0}> files in folder <{1}> in <{2}> drive.".format(
             file_count, curr_folder.name, self.name))
@@ -381,7 +384,6 @@ class Drive(object):
                 to True
 
         """
-        print("Updating", path)
         if path != self.root.path:
             if is_file:
                 src_item = src_drive.get_file_via_path(path)
@@ -392,79 +394,87 @@ class Drive(object):
 
             # Make sure both the source and destination files can be found
             if not src_item:
-                return "Item could not be found in <{0}>. Skipping.".format(src_drive.name)
+                return "Warning: Item <{0}> could not be found in <{1}>. Skipping.".format(path, src_drive.name)
             if not dest_item:
-                return "Item could not be found in <{0}>. Skipping.".format(self.name)
+                return "Warning: Item <{0}> could not be found in <{1}>. Skipping.".format(path, self.name)
 
+            # Build the updated payload
+            time_body = {'modifiedTime': src_item.last_modified_time}
+
+            # Send the file back
             try:
-                # Build the updated payload
-                time_body = {'modifiedTime': src_item.last_modified_time}
-
-                # Send the file back
                 time_response = self.service.files().update(fileId=dest_item.id,
-                                                            body=time_body
-                                                            ).execute()
+                                                        body=time_body
+                                                        ).execute()
+            except errors.HttpError:
+                print("Warning: Failed to update the last modified time for file <{0}>".format(src_item.name))
 
-                if UPDATE_PERMISSIONS:
-                    # Update the permissions for a given item
-                    results = src_drive.service.permissions().list(fileId=src_item.id,
-                                                                   fields='permissions(id, emailAddress, displayName, role, type)'
-                                                                   ).execute()
-                    permissions = results.get('permissions', [])
+            if UPDATE_PERMISSIONS:
+                # Update the permissions for a given item
+                results = src_drive.service.permissions().list(fileId=src_item.id,
+                                                               fields='permissions(id, emailAddress, displayName, role, type)'
+                                                               ).execute()
+                permissions = results.get('permissions', [])
 
-                    for permission in permissions:
-                        if permission['type'] == 'user' and permission['role'] != 'owner':
-                            # Get the new user email
-                            new_user = convert_to_new_domain(
-                                permission['emailAddress'], NEW_DOMAIN)
+                permission_failures = []
 
-                            # Build the updated payload
-                            user_body = {'emailAddress': new_user,
-                                         'role': permission['role'],
-                                         'type': 'user'}
+                for permission in permissions:
+                    if permission['type'] == 'user' and permission['role'] != 'owner':
+                        # Get the new user email
+                        new_user = convert_to_new_domain(
+                            permission['emailAddress'], NEW_DOMAIN)
 
-                            # Send the file back
+                        # Build the updated payload
+                        user_body = {'emailAddress': new_user,
+                                     'role': permission['role'],
+                                     'type': 'user'}
+
+                        # Send the file back
+                        try:
                             perm_response = self.service.permissions().create(fileId=dest_item.id,
                                                                       body=user_body,
                                                                       sendNotificationEmail=False,
                                                                       transferOwnership=False
                                                                       ).execute()
+                        except errors.HttpError:
+                            # Store the failure
+                            permission_failures.append(new_user)
 
-                if UPDATE_OWNER:
-                    results = src_drive.service.permissions().list(fileId=src_item.id,
-                                                                   fields='permissions(emailAddress, role, type)'
-                                                                   ).execute()
-                    permissions = results.get('permissions', [])
+                if len(permission_failures) > 0:
+                    print("Warning: Failed to update permission on item <{0}>. The user(s) <{1}> may not exist in the new Drive.".format(src_item.name, permission_failures))
 
-                    for permission in permissions:
-                        if permission['type'] == 'user' and permission['role'] == 'owner':
-                            curr_owner = permission['emailAddress']
+            if UPDATE_OWNER:
+                results = src_drive.service.permissions().list(fileId=src_item.id,
+                                                               fields='permissions(emailAddress, role, type)'
+                                                               ).execute()
+                permissions = results.get('permissions', [])
 
-                    if curr_owner != src_drive.owner.email:
-                        # Get the new user email
-                        new_user = convert_to_new_domain(
-                            src_item.owner.email, NEW_DOMAIN)
+                for permission in permissions:
+                    if permission['type'] == 'user' and permission['role'] == 'owner':
+                        curr_owner = permission['emailAddress']
 
-                        # Build the updated payload
-                        user_body = {'emailAddress': new_user,
-                                     'role': 'owner',
-                                     'type': 'user'}
+                if curr_owner != src_drive.owner.email:
+                    # Get the new user email
+                    new_owner = convert_to_new_domain(
+                        src_item.owner.email, NEW_DOMAIN)
 
-                        # Send the file back
-                        try:
-                            user_response = self.service.permissions().create(fileId=dest_item.id,
-                                                                              body=user_body,
-                                                                              sendNotificationEmail=True,
-                                                                              transferOwnership=True
-                                                                              ).execute()
-                        except:
-                            print("Error updating owner. The user may not exist in the new Drive.")
+                    # Build the updated payload
+                    user_body = {'emailAddress': new_owner,
+                                 'role': 'owner',
+                                 'type': 'user'}
 
-                return "Successfully updated <{0}> in drive <{1}>.".format(dest_item.name, self.name)
+                    # Send the file back
+                    try:
+                        user_response = self.service.permissions().create(fileId=dest_item.id,
+                                                                          body=user_body,
+                                                                          sendNotificationEmail=True,
+                                                                          transferOwnership=True
+                                                                          ).execute()
+                    except errors.HttpError:
+                        print("Warning: Failed to update owner of item <{0}>. The user <{1}> may not exist in the new Drive.".format(src_item.name, new_owner))
 
-            except:
-                # TODO: Handle this properly
-                print("An error occurred")
+
+        return "Successfully updated <{0}> in drive <{1}>.".format(dest_item.name, self.name) 
 
     def _generate_paths(self, curr_item=None, curr_path=None):
         """ Generate all the paths for every file and folder in the drive - expensive
@@ -500,7 +510,6 @@ class Drive(object):
 
         for folder in self.folders:
             # Reset to the current path
-            # print (curr_path)
             path_objects = list(curr_path)
             if curr_path:
                 curr_item = path_objects[-1]
@@ -541,7 +550,6 @@ class Drive(object):
                              last_modified_by=None,
                              path=PATH_ROOT)
         self.root = root_folder
-        #self.add_folder(root_folder)
 
         # Get the rest of the drive
         while True:
