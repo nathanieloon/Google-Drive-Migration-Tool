@@ -351,7 +351,7 @@ class Drive(object):
                                          logger=logger,
                                          path=curr_folder.path,
                                          is_file=False)
-        if file_result:
+        if folder_result:
             logger.info(folder_result)
 
         logger.info("Updated <{0}> files in folder <{1}> in <{2}> drive.".format(
@@ -409,17 +409,6 @@ class Drive(object):
                 return
             if not dest_item:
                 logger.error("Item <{0}> could not be found in <{1}>. Skipping.".format(path, self.name))
-
-            # Build the updated payload
-            time_body = {'modifiedTime': src_item.last_modified_time}
-
-            # Send the file back
-            try:
-                time_response = self.service.files().update(fileId=dest_item.id,
-                                                        body=time_body
-                                                        ).execute()
-            except errors.HttpError:
-                logger.warning("Failed to update the last modified time for file <{0}>".format(src_item.name))
 
             if UPDATE_PERMISSIONS:
                 # Update the permissions for a given item
@@ -484,6 +473,18 @@ class Drive(object):
                                                                           ).execute()
                     except errors.HttpError:
                         logger.warning("Failed to update owner of item <{0}>. The user <{1}> may not exist in the new Drive.".format(src_item.name, new_owner))
+
+            # Build the updated payload
+            time_body = {'modifiedTime': src_item.last_modified_time}
+
+            # Send the file back
+            try:
+                time_response = self.service.files().update(fileId=dest_item.id,
+                                                        body=time_body
+                                                        ).execute()
+            except errors.HttpError:
+                logger.warning("Failed to update the last modified time for file <{0}>".format(src_item.name))
+
 
 
         return "Successfully updated <{0}> in drive <{1}>.".format(dest_item.name, self.name) 
