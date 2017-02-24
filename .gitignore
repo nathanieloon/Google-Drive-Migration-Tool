@@ -2,3 +2,7 @@
 *.xml
 
 client_secret\.json
+
+logs/
+
+*.log
