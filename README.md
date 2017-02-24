@@ -17,11 +17,13 @@ from the source to destination Drive.
 Instructions on the authentication setup for the Drive API can be found 
 [here](https://developers.google.com/drive/v3/web/quickstart/python).
 
+This project was built for Python3, so you'll run into unicode errors in Python2.
+
 Requirements can be installed with the command:
 ` pip install -r requirements.txt `
 
-Alternatively, you should only need the Google Drive API library:
-` pip install --upgrade google-api-python-client`
+## Setup
+To setup the tool first run `python3 drive-migration-tool.py -S`. The script will prompt you to login twice, the first login is the source drive, and the second is the destination drive. The script will then output the user/email of the accounts associated with the tool. You can use `python3 drive-migration-tool.py -s` to check the status of the tool.
 
 ## Usage
 ``` 
