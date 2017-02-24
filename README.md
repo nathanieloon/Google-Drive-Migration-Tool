@@ -26,7 +26,7 @@ To setup the tool first run `python3 drive-migration-tool.py -S`. The script wil
 
 ## Usage
 ``` 
-usage: drive-migration-tool.py [-h] [-r ROOT] [-f PREFIX]
+usage: drive-migration-tool.py [-h] [-r ROOT] [-f PREFIX] [-l LOG_LEVEL]
                                (-p | -P | -u | -s | -S) [-v] [-F PRINTTOFILE]
                                [-x GENERATE_XML] [-uo] [-d NEWDOMAIN] [-up]
 
@@ -38,6 +38,8 @@ optional arguments:
                         root Drive directory
   -f PREFIX, --prefix PREFIX
                         Prefix letter for the drive (eg "D")
+  -l LOG_LEVEL, --log-level LOG_LEVEL
+                        Logging level for output
   -p, --printsrc        Print the source Drive
   -P, --printdest       Print the destination Drive
   -u, --updatedrive     Update the destination Drive using the meta data from

@@ -14,6 +14,7 @@ import os
 import sys
 import argparse
 import logging
+import time
 import xml.etree.ElementTree as etree
 
 from xml.dom import minidom
@@ -74,13 +75,17 @@ class Drive(object):
         """ Wrapper for building the drive
         """
         # Initialise the drive
-        self._build_drive()
-        print("Generating paths for <{0}>.".format(self.name))
-        self._generate_paths()  # This is expensive, needs optimisation
-        print("Finished generating paths for <{0}>.".format(self.name))
+        build_logger = logging.getLogger('build-drive')
+        self._build_drive(build_logger)
+        build_logger.debug("Generating paths for <{0}>.".format(self.name))
+        self._generate_paths()  # This is expensive, optimise if possible
+        build_logger.info("Finished generating paths for <{0}>. Drive has been built.".format(self.name))
 
     def get_credentials(self):
-        """ return the drive credentials being used for this drive
+        """ Return the drive credentials being used for this drive
+
+        Returns:
+            owner (User): Owner of the Drive
         """
         # Return the owner if the drive is built, if not then grab it
         if self.owner:
@@ -105,7 +110,7 @@ class Drive(object):
         """
         self.files.add(file)
 
-    def parse_path(self, path):
+    def parse_path(self, path, logger):
         """ Parse a given file path, returning an ordered list of path objects
 
         Args:
@@ -116,7 +121,7 @@ class Drive(object):
 
         """
         if PATH_ROOT not in path:
-            print("Invalid path <{0}>.".format(path))
+            logger.error("Invalid path <{0}>.".format(path))
             return None
 
         if path == PATH_ROOT:
@@ -157,7 +162,7 @@ class Drive(object):
                     break
 
         if not any(obj.name == path_list[-1] for obj in path_objects) or len(path_objects) == 0:
-            print("Path <{0}> could not be found. Only found: <{1}>".format(
+            logger.error("Path <{0}> could not be found. Only found: <{1}>".format(
                 PATH_ROOT + path, path_objects))
             return None
 
@@ -186,7 +191,7 @@ class Drive(object):
 
         return path_string
 
-    def generate_xml(self, base_folder_path=ROOT_FOLDER, curr_folder=None, curr_node=None, tree=None):
+    def generate_xml(self, logger, base_folder_path=ROOT_FOLDER, curr_folder=None, curr_node=None, tree=None):
         """ Save the structure to an XML file type
 
         Args:
@@ -197,7 +202,7 @@ class Drive(object):
         """
         # If we're looking at the base folder, set it as the current folder
         if not curr_folder:
-            path_objects = self.parse_path(base_folder_path)
+            path_objects = self.parse_path(base_folder_path, logger)
             if not path_objects:
                 # Will already have thrown error message
                 sys.exit()
@@ -220,7 +225,7 @@ class Drive(object):
                     if folder.last_modified_by:
                         curr_node.attrib['last_modified_by'] = folder.last_modified_by.name
 
-                    self.generate_xml(curr_folder=folder, curr_node=curr_node, tree=tree)
+                    self.generate_xml(curr_folder=folder, logger=logger, curr_node=curr_node, tree=tree)
 
         # Print file(s)
         for file in self.files:
@@ -235,7 +240,7 @@ class Drive(object):
 
         return tree
 
-    def print_drive(self, base_folder_path=ROOT_FOLDER, verbose=False, curr_folder=None, prefix="", output_file=None):
+    def print_drive(self, logger, base_folder_path=ROOT_FOLDER, verbose=False, curr_folder=None, prefix="", output_file=None):
         """ Print the drive structure from the given root folder
 
         Args:
@@ -249,7 +254,7 @@ class Drive(object):
         """
         # If we're looking at the base folder, set it as the current folder
         if not curr_folder:
-            path_objects = self.parse_path(base_folder_path)
+            path_objects = self.parse_path(base_folder_path, logger)
             if not path_objects:
                 # Will already have thrown error message
                 sys.exit()
@@ -292,7 +297,7 @@ class Drive(object):
             if folder.parents:
                 if curr_folder.id in folder.parents:
                     self.print_drive(
-                        verbose=verbose, curr_folder=folder, prefix=prefix + "\t", output_file=output_file)
+                        verbose=verbose, logger=logger, curr_folder=folder, prefix=prefix + "\t", output_file=output_file)
 
     def get_user_emails(self):
         """ Get all user emails
@@ -309,7 +314,7 @@ class Drive(object):
         if user.email not in self.get_user_emails():
             self.users.add(user)
 
-    def update_drive(self, src_drive, base_folder_path=None, parent=None, curr_folder=None):
+    def update_drive(self, src_drive, logger, base_folder_path=None, parent=None, curr_folder=None):
         """ Update the owner and last known modified date for a file/folder
 
         Args:
@@ -326,7 +331,7 @@ class Drive(object):
             if not base_folder_path or base_folder_path == src_drive.root.path:
                 curr_folder = src_drive.root
             else:
-                curr_folder = src_drive.get_folder_via_path(base_folder_path)
+                curr_folder = src_drive.get_folder_via_path(base_folder_path, logger)
                 # If we can't find the root path, bail out
                 if not curr_folder:
                     sys.exit
@@ -336,45 +341,50 @@ class Drive(object):
         for file in src_drive.files:
             if file.path:
                 if curr_folder.id in file.parents:
-                    file_result = self.update_info(src_drive=src_drive, path=file.path)
-                    print(file_result)
+                    file_result = self.update_info(src_drive=src_drive, path=file.path, logger=logger)
+                    if file_result:
+                        logger.info(file_result)
                     file_count += 1
 
         # Update the current folder
         folder_result = self.update_info(src_drive=src_drive,
+                                         logger=logger,
                                          path=curr_folder.path,
                                          is_file=False)
-        print(folder_result)
+        if file_result:
+            logger.info(folder_result)
 
-        print("Updated <{0}> files in folder <{1}> in <{2}> drive.".format(
+        logger.info("Updated <{0}> files in folder <{1}> in <{2}> drive.".format(
             file_count, curr_folder.name, self.name))
 
         # Update sub-folders
         for folder in src_drive.folders:
             if curr_folder.id in folder.parents:
                 self.update_drive(src_drive=src_drive,
-                                  parent=curr_folder, curr_folder=folder)
+                                  parent=curr_folder,
+                                  logger=logger,
+                                  curr_folder=folder)
 
-    def get_file_via_path(self, path):
+    def get_file_via_path(self, path, logger):
         """ Get a file via its path
         """
         for file in self.files:
             if file.path == path:
                 return file
 
-        print("Could not find file at <{0}> in <{1}>.".format(path, self.name))
+        logger.error("Could not find file at <{0}> in <{1}>.".format(path, self.name))
 
-    def get_folder_via_path(self, path):
+    def get_folder_via_path(self, path, logger):
         """ Get a folder via its path
         """
         for folder in self.folders:
             if folder.path == path:
                 return folder
 
-        print("Could not find folder at <{0}> in <{1}>.".format(
+        logger.error("Could not find folder at <{0}> in <{1}>.".format(
             path, self.name))
 
-    def update_info(self, src_drive, path, is_file=True):
+    def update_info(self, src_drive, path, logger, is_file=True):
         """ Update the supplied drive item with the last known modified
             date and owner for a given file
 
@@ -387,17 +397,18 @@ class Drive(object):
         """
         if path != self.root.path:
             if is_file:
-                src_item = src_drive.get_file_via_path(path)
-                dest_item = self.get_file_via_path(path)
+                src_item = src_drive.get_file_via_path(path, logger)
+                dest_item = self.get_file_via_path(path, logger)
             else:
-                src_item = src_drive.get_folder_via_path(path)
-                dest_item = self.get_folder_via_path(path)
+                src_item = src_drive.get_folder_via_path(path, logger)
+                dest_item = self.get_folder_via_path(path, logger)
 
             # Make sure both the source and destination files can be found
             if not src_item:
-                return "Warning: Item <{0}> could not be found in <{1}>. Skipping.".format(path, src_drive.name)
+                logger.error("Item <{0}> could not be found in <{1}>. Skipping.".format(path, src_drive.name))
+                return
             if not dest_item:
-                return "Warning: Item <{0}> could not be found in <{1}>. Skipping.".format(path, self.name)
+                logger.error("Item <{0}> could not be found in <{1}>. Skipping.".format(path, self.name))
 
             # Build the updated payload
             time_body = {'modifiedTime': src_item.last_modified_time}
@@ -408,7 +419,7 @@ class Drive(object):
                                                         body=time_body
                                                         ).execute()
             except errors.HttpError:
-                print("Warning: Failed to update the last modified time for file <{0}>".format(src_item.name))
+                logger.warning("Failed to update the last modified time for file <{0}>".format(src_item.name))
 
             if UPDATE_PERMISSIONS:
                 # Update the permissions for a given item
@@ -442,7 +453,7 @@ class Drive(object):
                             permission_failures.append(new_user)
 
                 if len(permission_failures) > 0:
-                    print("Warning: Failed to update permission on item <{0}>. The user(s) <{1}> may not exist in the new Drive.".format(src_item.name, permission_failures))
+                    logger.warning("Failed to update permission on item <{0}>. The user(s) <{1}> may not exist in the new Drive.".format(src_item.name, permission_failures))
 
             if UPDATE_OWNER:
                 results = src_drive.service.permissions().list(fileId=src_item.id,
@@ -472,7 +483,7 @@ class Drive(object):
                                                                           transferOwnership=True
                                                                           ).execute()
                     except errors.HttpError:
-                        print("Warning: Failed to update owner of item <{0}>. The user <{1}> may not exist in the new Drive.".format(src_item.name, new_owner))
+                        logger.warning("Failed to update owner of item <{0}>. The user <{1}> may not exist in the new Drive.".format(src_item.name, new_owner))
 
 
         return "Successfully updated <{0}> in drive <{1}>.".format(dest_item.name, self.name) 
@@ -525,7 +536,7 @@ class Drive(object):
                 # Generate children
                 self._generate_paths(folder, path_objects)
 
-    def _build_drive(self):
+    def _build_drive(self, logger):
         """ Build the Google Drive for the given service
 
         Build the Drive objects from the provided API point.
@@ -533,7 +544,7 @@ class Drive(object):
         """
         page_token = None
         page_no = 1
-        print("Retrieving drive data for <{0}>...".format(self.name))
+        logger.info("Retrieving drive data for <{0}>...".format(self.name))
 
         # Get the root "My Drive" folder first
         response = self.service.files().get(fileId='root',
@@ -551,6 +562,7 @@ class Drive(object):
                              last_modified_by=None,
                              path=PATH_ROOT)
         self.root = root_folder
+        logger.debug("root_folder: {0}, root_owner: {1} ".format(root_folder, owner))
 
         # Get the rest of the drive
         while True:
@@ -592,6 +604,7 @@ class Drive(object):
                                     last_modified_time=result['modifiedTime'],
                                     last_modified_by=modified_by)
                     self.add_folder(folder)
+                    logger.debug("folder: {0}, owner: {1}".format(folder, owner))
                 else:
                     file = File(id=result['id'],
                                 name=result['name'],
@@ -602,6 +615,7 @@ class Drive(object):
                                 last_modified_by=modified_by,
                                 mime_type=result['mimeType'])
                     self.add_file(file)
+                    logger.debug("file: {0}, owner: {1}".format(file, owner))
 
             # Look for more pages of results
             page_token = response.get('nextPageToken', None)
@@ -609,7 +623,7 @@ class Drive(object):
             if page_token is None:
                 break
 
-        print("Found <{0}> pages of results for <{1}>. Drive has been built.".format(
+        logger.info("Found <{0}> pages of results for <{1}>. Building Drive...".format(
             page_no, self.name))
 
 
@@ -769,7 +783,7 @@ def get_credentials(src, reset=False):
             credentials = tools.run_flow(flow, store, FLAGS)
         else:  # Needed only for compatibility with Python 2.6
             credentials = tools.run(flow, store)
-        print('Storing credentials to ' + credential_path)
+        logging.info('Storing credentials to ' + credential_path)
 
     return credentials
 
@@ -794,6 +808,8 @@ def build_arg_parser():
                         help='Path to folder to start in (eg "D:/test"). Defaults to root Drive directory')
     parser.add_argument('-f', '--prefix', type=str,
                         help='Prefix letter for the drive (eg "D")')
+    parser.add_argument('-l', '--log-level', type=str, default=logging.INFO,
+                        help='Logging level for output')
 
     # Function group
     group = parser.add_mutually_exclusive_group(required=True)
@@ -834,7 +850,8 @@ def print_wrapper(root, drive, verbose, printtofile=False, generate_xml=False):
 
     # Choose a print method
     if generate_xml:
-        output = drive.generate_xml(root)
+        xml_log = logging.getLogger('xml-gen')
+        output = drive.generate_xml(xml_log, root)
         tree = etree.ElementTree(output)
         tree.write(generate_xml)
     else:
@@ -842,7 +859,7 @@ def print_wrapper(root, drive, verbose, printtofile=False, generate_xml=False):
 
     # Close the file
     if printtofile or generate_xml:
-        print("Output directory of {0} to {1}".format(drive.name, printtofile if printtofile else generate_xml))
+        logging.info("Directory of {0} has been output to {1}".format(drive.name, printtofile if printtofile else generate_xml))
         file.close()
 
 def connect_to_drive(source, build=True, reset_cred=False):
@@ -863,16 +880,27 @@ def connect_to_drive(source, build=True, reset_cred=False):
 
 
 def main():
-    # Setup logger
-    logging.basicConfig(filename='example.log', level=logging.DEBUG)
-    # Suppress all the google error messages
-    logging.getLogger('googleapiclient').setLevel(logging.CRITICAL)
-
     # Args parsing
     parser = build_arg_parser()
     args = parser.parse_args()
     global FLAGS
     FLAGS = args
+
+    # Setup logger
+    timestr = time.strftime("%Y%m%d-%H%M%S")
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+    logging.basicConfig(filename='logs/'+timestr+'.log', level=args.log_level)
+    # Suppress all the google error messages
+    logging.getLogger('googleapiclient').setLevel(logging.CRITICAL)
+    logging.getLogger('oauth2client.transport').setLevel(logging.CRITICAL)
+    logging.getLogger('oauth2client.client').setLevel(logging.CRITICAL)
+    logging.getLogger().addHandler(logging.StreamHandler())
+
+    # Log args
+    logging.info('Starting Google Drive Migration Tool')
+    log_arg = logging.getLogger('args')
+    log_arg.debug(args)
 
     if args.prefix:
         # Set the Drive prefix
@@ -882,14 +910,14 @@ def main():
     if args.root:
         # Set the root folder
         if PATH_ROOT not in args.root:
-            print("Error: The Drive prefix {0} is not in the supplied path.".format(PATH_ROOT))
+            log_arg.info("Error: The Drive prefix {0} is not in the supplied path.".format(PATH_ROOT))
             sys.exit()
 
         global ROOT_FOLDER
         ROOT_FOLDER = args.root
 
     if (args.printtofile or args.generate_xml) and not (args.printsrc or args.printdest):
-        print("Error: The --printsrc or --printdest options must be used with the --printtofile and --generate-xml options.")
+        parser.error("Error: The --printsrc or --printdest options must be used with the --printtofile and --generate-xml options.")
         sys.exit()
 
     if args.setup:
@@ -902,8 +930,8 @@ def main():
         src_owner = src_drive.get_credentials()
         dest_owner = dest_drive.get_credentials()
 
-        print("The <{0}> Drive is logged into <{1} ({2})>".format(src_drive.name, src_owner.name, src_owner.email))
-        print("The <{0}> Drive is logged into <{1} ({2})>".format(dest_drive.name, dest_owner.name, dest_owner.email))
+        logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(src_drive.name, src_owner.name, src_owner.email))
+        logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(dest_drive.name, dest_owner.name, dest_owner.email))
 
     if args.status:
         # Source account credentials
@@ -915,8 +943,8 @@ def main():
         src_owner = src_drive.get_credentials()
         dest_owner = dest_drive.get_credentials()
 
-        print("The <{0}> Drive is logged into <{1} ({2})>".format(src_drive.name, src_owner.name, src_owner.email))
-        print("The <{0}> Drive is logged into <{1} ({2})>".format(dest_drive.name, dest_owner.name, dest_owner.email))
+        logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(src_drive.name, src_owner.name, src_owner.email))
+        logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(dest_drive.name, dest_owner.name, dest_owner.email))
 
     if args.printsrc:
         # Source account credentials
@@ -929,11 +957,12 @@ def main():
         print_wrapper(args.root, dest_drive, args.verbose, args.printtofile, args.generate_xml)
 
     if args.updatedrive:
+        update_log = logging.getLogger('update')
         # Check --newdomain is set
         if (args.updateowner or args.updateperm) and args.newdomain is None:
             parser.error("--updateuser and --updateperm require --newdomain")
 
-        logging.info("Updating...")
+        update_log.info("Updating...")
 
         # Source account credentials
         src_drive = connect_to_drive('src')
@@ -949,7 +978,7 @@ def main():
             UPDATE_PERMISSIONS = args.updateperm
 
         # Update the drive
-        dest_drive.update_drive(src_drive, args.root)
+        dest_drive.update_drive(src_drive, update_log, base_folder_path=args.root)
 
 if __name__ == '__main__':
     main()
