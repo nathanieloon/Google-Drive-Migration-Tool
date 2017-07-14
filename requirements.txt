@@ -1,2 +1,5 @@
 google-api-python-client==1.6.1
 httplib2
+apiclient
+boxsdk==2.0.0a4
+bottle
