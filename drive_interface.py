@@ -1,7 +1,6 @@
 # Imports
 from __future__ import print_function
 
-import migration_objects
 import httplib2
 import os
 import sys
@@ -39,11 +38,9 @@ def get_credentials(src, reset=False):
     if not os.path.exists(credential_dir):
         os.makedirs(credential_dir)
     if src == 'src':
-        credential_path = os.path.join(credential_dir,
-                                       'src-drive-migration-tool.json')
+        credential_path = os.path.join(credential_dir, 'src-drive-migration-tool.json')
     else:
-        credential_path = os.path.join(credential_dir,
-                                       'dest-drive-migration-tool.json')
+        credential_path = os.path.join(credential_dir, 'dest-drive-migration-tool.json')
 
     store = Storage(credential_path)
     credentials = store.get()
@@ -191,8 +188,8 @@ class Drive(object):
         response = self.service.about().get(fields="user").execute()
 
         # Make a new user object
-        owner = migration_objects.User(name=response['user']['displayName'],
-                                       email=response['user']['emailAddress'])
+        owner = User(name=response['user']['displayName'],
+                     email=response['user']['emailAddress'])
 
         return owner
 
@@ -364,7 +361,7 @@ class Drive(object):
                     if file.last_modified_by:
                         print(" (" + file.last_modified_by.email + ")", file=output_file)
                 else:
-                    print(prefix + "\t" + file.name, file=output_file)
+                    print(prefix + "\t" + file.path, file=output_file)
 
         # Print child folder(s)
         for folder in self.folders:
@@ -446,7 +443,9 @@ class Drive(object):
             if file.path == path:
                 return file
 
-        logger.error("Could not find file at <{0}> in <{1}>.".format(path, self.name))
+        if logger:
+            logger.error("Could not find file at <{0}> in <{1}>.".format(path, self.name))
+        return None
 
     def get_folder_via_path(self, path, logger):
         """ Get a folder via its path
@@ -577,7 +576,7 @@ class Drive(object):
 
         Args:
             curr_item (File/Folder, optional): Current item being looked at
-            curr_path (str): Current path to item being looked at
+            curr_path (List): Current path to item being looked at
 
         """
         # Start in root
@@ -631,17 +630,17 @@ class Drive(object):
         response = self.service.files().get(fileId='root',
                                             fields="id, mimeType, name, owners").execute()
         # Set the owner
-        owner = migration_objects.User(name=response['owners'][0]['displayName'],
-                                       email=response['owners'][0]['emailAddress'])
+        owner = User(name=response['owners'][0]['displayName'],
+                     email=response['owners'][0]['emailAddress'])
         self.owner = owner
         # Set the root
-        root_folder = migration_objects.Folder(identifier=response['id'],
-                                               name=response['name'],
-                                               owner=owner,
-                                               parents=None,
-                                               last_modified_time=None,
-                                               last_modified_by=None,
-                                               path=PATH_ROOT)
+        root_folder = Folder(identifier=response['id'],
+                             name=response['name'],
+                             owner=owner,
+                             parents=None,
+                             last_modified_time=None,
+                             last_modified_by=None,
+                             path=PATH_ROOT)
         self.root = root_folder
         logger.debug("root_folder: {0}, root_owner: {1} ".format(root_folder, owner))
 
@@ -657,14 +656,14 @@ class Drive(object):
             # Build folder structure in memory
             for result in results:
                 # Create owner
-                owner = migration_objects.User(name=result['owners'][0]['displayName'],
-                                               email=result['owners'][0]['emailAddress'])
+                owner = User(name=result['owners'][0]['displayName'],
+                             email=result['owners'][0]['emailAddress'])
                 self.add_user(owner)
 
                 # Save last modifying user, if it exists
-                if 'emailAddress' in result['lastModifyingUser']:
-                    modified_by = migration_objects.User(name=result['lastModifyingUser']['displayName'],
-                                                         email=result['lastModifyingUser']['emailAddress'])
+                if 'lastModifyingUser' in result and 'emailAddress' in result['lastModifyingUser']:
+                    modified_by = User(name=result['lastModifyingUser']['displayName'],
+                                       email=result['lastModifyingUser']['emailAddress'])
                     self.add_user(modified_by)
                 else:
                     modified_by = None
@@ -677,24 +676,24 @@ class Drive(object):
 
                 # Create drive item
                 if result['mimeType'] == 'application/vnd.google-apps.folder':
-                    folder = migration_objects.Folder(identifier=result['id'],
-                                                      name=result['name'],
-                                                      owner=owner,
-                                                      parents=parents,
-                                                      created_time=result['createdTime'],
-                                                      last_modified_time=result['modifiedTime'],
-                                                      last_modified_by=modified_by)
+                    folder = Folder(identifier=result['id'],
+                                    name=result['name'],
+                                    owner=owner,
+                                    parents=parents,
+                                    created_time=result['createdTime'],
+                                    last_modified_time=result['modifiedTime'],
+                                    last_modified_by=modified_by)
                     self.add_folder(folder)
                     logger.debug("folder: {0}, owner: {1}".format(folder, owner))
                 else:
-                    file = migration_objects.File(identifier=result['id'],
-                                                  name=result['name'],
-                                                  owner=owner,
-                                                  parents=parents,
-                                                  created_time=result['createdTime'],
-                                                  last_modified_time=result['modifiedTime'],
-                                                  last_modified_by=modified_by,
-                                                  mime_type=result['mimeType'])
+                    file = File(identifier=result['id'],
+                                name=result['name'],
+                                owner=owner,
+                                parents=parents,
+                                created_time=result['createdTime'],
+                                last_modified_time=result['modifiedTime'],
+                                last_modified_by=modified_by,
+                                mime_type=result['mimeType'])
                     self.add_file(file)
                     logger.debug("file: {0}, owner: {1}".format(file, owner))
 
@@ -704,5 +703,133 @@ class Drive(object):
             if page_token is None:
                 break
 
-        logger.info("Found <{0}> pages of results for <{1}>. Building Drive...".format(
-            page_no, self.name))
+        logger.info("Found <{0}> pages of results for <{1}>. Building Drive...".format(page_no, self.name))
+
+
+class User(object):
+    """ User representation class
+
+    Args:
+        name (str): Name of the user
+        email (str): Email of the user
+
+    Attributes:
+        name (str): Name of the user
+        email (str): Email of the user
+
+    """
+
+    def __init__(self, name, email):
+        self.name = name
+        self.email = email
+
+    def __repr__(self):
+        return "<user: {0}>".format(self.email)
+
+
+class File(object):
+    """ File representation class
+
+    Args:
+        identifier (str): Google Drive ID of the file
+        name (str): Name of the file
+        owner (User.User): Owner of the file
+        parents ([str]): List of parent IDs
+        created_time (str): Time/date created
+        last_modified_time (str): "Last modified time"
+        last_modified_by (User.User): "Last modified by" user
+        mime_type (str): MIME Type of the file
+
+    Attributes:
+        id (str): Google Drive ID of the file
+        name (str): Name of the file
+        owner (User.User): Owner of the file
+        parents ([str]): List of parent IDs
+        created_time (str): Time/date created
+        last_modified_time (str): "Last modified time"
+        last_modified_by (User.User): "Last modified by" user
+        mime_type (str): MIME Type of the file
+        path (str): Path to the file within the Drive
+
+    """
+
+    def __init__(self,
+                 identifier,
+                 name,
+                 owner,
+                 parents,
+                 created_time,
+                 last_modified_time,
+                 last_modified_by,
+                 mime_type):
+        self.id = identifier
+        self.name = name
+        self.parents = parents
+        self.owner = owner
+        self.created_time = created_time
+        self.last_modified_time = last_modified_time
+        self.last_modified_by = last_modified_by
+        self.mime_type = mime_type
+
+        self.path = None
+
+    def __repr__(self):
+        return "<file: {0}>".format(self.name)
+
+    def set_path(self, path):
+        """ Set the file path string
+        """
+        self.path = path
+
+
+class Folder(object):
+    """ Folder representation class
+
+    Args:
+        identifier (str): Google Drive ID of the folder
+        name (str): Name of the folder
+        owner (User.User): Owner of the folder
+        parents ([str], optional): List of parent IDs
+        created_time (str): Time/date created
+        last_modified_time (str, optional): "Last modified time"
+        last_modified_by (User.User, optional): "Last modified by" user
+        path (str, optional): Path to the folder within the Drive
+
+    Attributes:
+        id (str): Google Drive ID of the folder
+        name (str): Name of the folder
+        owner (User.User): Owner of the folder
+        parents ([str]): List of parent IDs
+        created_time (str): Time/date created
+        last_modified_time (str): "Last modified time"
+        last_modified_by (User.User): "Last modified by" user
+        path (str): Path to the folder within the Drive
+
+    """
+
+    def __init__(self,
+                 identifier,
+                 name,
+                 owner,
+                 parents=None,
+                 created_time=None,
+                 last_modified_time=None,
+                 last_modified_by=None,
+                 path=None):
+        self.id = identifier
+        self.name = name
+        self.parents = parents
+        self.owner = owner
+        self.created_time = created_time
+        self.last_modified_time = last_modified_time
+        self.last_modified_by = last_modified_by
+
+        self.path = path
+
+    def __repr__(self):
+        return "<folder: {0}>".format(self.name)
+
+    def set_path(self, path):
+        """ Set the folder path string
+        """
+        self.path = path

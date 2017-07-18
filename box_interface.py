@@ -5,9 +5,10 @@ from __future__ import print_function, unicode_literals
 import bottle
 import configparser
 import webbrowser
+
+from boxsdk import Client, OAuth2, exception
 from threading import Thread, Event
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler, make_server
-from boxsdk import OAuth2
 
 
 def authenticate(oauth_class=OAuth2, force_refresh=False):
@@ -84,3 +85,71 @@ def authenticate(oauth_class=OAuth2, force_refresh=False):
         cfg.write(configfile)
 
     return oauth
+
+
+def apply_metadata(drive):
+    box_oauth = authenticate(force_refresh=True)
+
+    box_client = Client(box_oauth)
+    root_folder = box_client.folder(folder_id='0')
+    box_items = root_folder.get_items(limit='10000')
+    root_item = BoxObject('0', 'D:', None)
+    all_files = []
+    for item in box_items:
+        create_items(item, root_item, all_files)
+
+    for box_file in all_files:
+        drive_file = drive.get_file_via_path(box_file.path, None)
+        if drive_file:
+            metadata = box_client.file(box_file.id).metadata('enterprise', 'legacyData')
+            if metadata.get() is None:
+                metadata.create({'owner': drive_file.owner.name,
+                                 'legacyCreatedDate': drive_file.created_time,
+                                 'legacyLastModifyingUser': drive_file.last_modified_by.name if drive_file.last_modified_by else drive_file.owner.name,
+                                 'legacyLastModifiedDate': drive_file.last_modified_time if drive_file.last_modified_time else drive_file.created_time})
+                print('matched file: ' + box_file.path)
+            else:
+                print('The legacy metadata already exists for' + box_file.path + ', skipping')
+
+
+def create_items(item, parent, file_list):
+    if item.type == 'file':
+        box_file = BoxObject(item.id, item.name, parent)
+        file_list.append(box_file)
+    if item.type == 'folder':
+        box_folder = BoxObject(item.id, item.name, parent)
+        for sub_item in item.get_items(limit='10000'):
+            create_items(sub_item, box_folder, file_list)
+
+
+class BoxObject(object):
+    """ File representation class
+
+    Args:
+        identifier (str): Google Drive ID of the file
+        name (str): Name of the file
+        parent ([str]): List of parent IDs
+
+    Attributes:
+        id (str): Google Drive ID of the file
+        name (str): Name of the file
+        parent ([str]): List of parent IDs
+        path (str): Path to the file within the Drive
+
+    """
+
+    def __init__(self,
+                 identifier,
+                 name,
+                 parent):
+        self.id = identifier
+        self.name = name
+        self.parent = parent
+
+        if self.parent is not None:
+            self.path = self.parent.path + '/' + self.name
+        else:
+            self.path = name
+
+    def __repr__(self):
+        return "<file: {0}>".format(self.name)

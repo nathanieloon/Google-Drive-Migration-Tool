@@ -15,10 +15,9 @@ import sys
 import argparse
 import logging
 import time
-import box_interface
 import drive_interface
+import box_interface
 
-from boxsdk import Client
 from oauth2client import tools
 
 
@@ -188,35 +187,16 @@ def main():
         dest_drive.update_drive(src_drive, update_log, base_folder_path=args.root)
 
 
+def move_metadata(drive_files, box_files):
+    for drive_file in drive_files:
+        for box_file in box_files:
+            if drive_file.path == box_file.path and drive_file.user.email == box_file.user.email:
+                return
+
+
 if __name__ == '__main__':
     drive_map = drive_interface.connect_to_drive(source='src',
                                                  build=True,
                                                  reset_cred=False)
 
-    drive_map.print_drive(logger=None)
-
-
-
-'''
-    box_oauth = box_interface.authenticate()
-
-    box_client = Client(box_oauth)
-    me = box_client.user(user_id='me').get()
-    print(box_client.users())
-    root_folder = box_client.folder(folder_id='0')
-    box_items = root_folder.get_items(limit='10000')
-    for item in box_items:
-        print('Item: ' + item.name + ' type: ' + item.type)
-        if item.type == 'folder':
-            for sub_item in item.get_items(limit='10000'):
-                box_items.append(sub_item)
-    tom = client.user(1925543867)
-    root_folder = client.folder(folder_id='30905593299').get()
-    print(root_folder.add_collaborator(tom, CollaborationRole.OWNER))
-    items = root_folder.get_items(limit=100, offset=0)
-
-    metadata = client.file(195626333747).metadata('enterprise', 'legacyData')
-    metadata.create({'owner': 'Thomas Cox',
-                      'legacyCreatedDate': '2017-07-11T22:10:10Z'})
-    main()
-'''
+    box_interface.apply_metadata(drive_map)
