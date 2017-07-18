@@ -187,16 +187,7 @@ def main():
         dest_drive.update_drive(src_drive, update_log, base_folder_path=args.root)
 
 
-def move_metadata(drive_files, box_files):
-    for drive_file in drive_files:
-        for box_file in box_files:
-            if drive_file.path == box_file.path and drive_file.user.email == box_file.user.email:
-                return
-
-
 if __name__ == '__main__':
-    drive_map = drive_interface.connect_to_drive(source='src',
-                                                 build=True,
-                                                 reset_cred=False)
-
-    box_interface.apply_metadata(drive_map)
+    drive_map = drive_interface.connect_to_drive(source='src', build=True, reset_cred=False)
+    box_map = box_interface.Box()
+    box_map.apply_metadata(drive_map)
