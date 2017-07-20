@@ -10,15 +10,42 @@ from boxsdk import Client, OAuth2
 from threading import Thread, Event
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler, make_server
 
+REQUEST_COUNT = 100
+
+
+def _create_items(item, parent, file_list):
+    if item.type == 'file':
+        box_file = BoxObject(item.id, item.name, parent)
+        file_list.append(box_file)
+    if item.type == 'folder':
+        box_folder = BoxObject(item.id, item.name, parent)
+        for sub_item in _retrieve_all_items(item):
+            _create_items(sub_item, box_folder, file_list)
+
+
+def _retrieve_all_items(parent_folder):
+    offset = 0
+    all_items = None
+    while True:
+        new_items = parent_folder.get_items(limit=REQUEST_COUNT, offset=offset)
+        if all_items is None:
+            all_items = new_items
+        else:
+            all_items.update(new_items)
+        if len(new_items) < REQUEST_COUNT:
+            return all_items
+        offset += REQUEST_COUNT
+
 
 class Box(object):
 
-    def __init__(self, oauth_class=OAuth2, force_refresh=False):
+    def __init__(self, root_path, oauth_class=OAuth2, force_refresh=True):
         self.client = None
         self.files = None
+        self.root_path = root_path
 
         self._authenticate(oauth_class, force_refresh)
-        self._build_box()
+        self._build_box(root_path)
 
     def _authenticate(self, oauth_class=OAuth2, force_refresh=False):
         class StoppableWSGIServer(bottle.ServerAdapter):
@@ -89,39 +116,28 @@ class Box(object):
 
             self.client = Client(oauth)
 
-    def _build_box(self):
-        root_folder = self.client.folder(folder_id='0')
-        box_items = root_folder.get_items(limit='10000')
-        root_item = BoxObject('0', 'D:', None)
+    def _build_box(self, root_path):
+        box_items = _retrieve_all_items(self.client.folder(folder_id='0'))
+        root_item = BoxObject('0', root_path, None)
         self.files = []
         for item in box_items:
-            Box.create_items(item, root_item, self.files)
+            _create_items(item, root_item, self.files)
 
-    def apply_metadata(self, drive):
-        if not self.files:
-            self._build_box()
+    def apply_metadata(self, drive, match_root=''):
+        match_root = self.root_path + match_root
         for box_file in self.files:
-            drive_file = drive.get_file_via_path(box_file.path, None)
-            if drive_file:
-                metadata = self.client.file(box_file.id).metadata('enterprise', 'legacyData')
-                if metadata.get() is None:
-                    metadata.create({'owner': drive_file.owner.name,
-                                     'legacyCreatedDate': drive_file.created_time,
-                                     'legacyLastModifyingUser': drive_file.last_modified_by.name if drive_file.last_modified_by else drive_file.owner.name,
-                                     'legacyLastModifiedDate': drive_file.last_modified_time if drive_file.last_modified_time else drive_file.created_time})
-                    print('matched file: ' + box_file.path)
-                else:
-                    print('The legacy metadata already exists for ' + box_file.path + ', skipping')
-
-    @staticmethod
-    def create_items(item, parent, file_list):
-        if item.type == 'file':
-            box_file = BoxObject(item.id, item.name, parent)
-            file_list.append(box_file)
-        if item.type == 'folder':
-            box_folder = BoxObject(item.id, item.name, parent)
-            for sub_item in item.get_items(limit='10000'):
-                Box.create_items(sub_item, box_folder, file_list)
+            if match_root in box_file.name:
+                drive_file = drive.get_file_via_path(box_file.path, None)
+                if drive_file:
+                    metadata = self.client.file(box_file.id).metadata('enterprise', 'legacyData')
+                    if metadata.get() is None:
+                        metadata.create({'owner': drive_file.owner.name,
+                                         'legacyCreatedDate': drive_file.created_time,
+                                         'legacyLastModifyingUser': drive_file.last_modified_by.name,
+                                         'legacyLastModifiedDate': drive_file.last_modified_time})
+                        print('matched file: ' + box_file.path)
+                    else:
+                        print('The legacy metadata already exists for ' + box_file.path + ', skipping')
 
 
 class BoxObject(object):

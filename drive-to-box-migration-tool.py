@@ -188,6 +188,6 @@ def main():
 
 
 if __name__ == '__main__':
-    drive_map = drive_interface.connect_to_drive(source='src', build=True, reset_cred=False)
-    box_map = box_interface.Box()
+    drive_map = drive_interface.Drive('D:')
+    box_map = box_interface.Box('D:')
     box_map.apply_metadata(drive_map)
