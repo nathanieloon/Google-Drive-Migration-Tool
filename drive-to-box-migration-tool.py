@@ -128,38 +128,38 @@ def main():
 
     if args.setup:
         # Source account credentials
-        src_drive = drive_interface.connect_to_drive('src', build=False, reset_cred=True)
+        src_drive = drive_interface.Drive(root_path=PATH_ROOT, build=False, reset_cred=True)
 
         # Destination account credentials
-        dest_drive = drive_interface.connect_to_drive('dest', build=False, reset_cred=True)
+        dest_drive = box_interface.Box(path_prefix=PATH_ROOT, build=False, reset_cred=True)
 
-        src_owner = src_drive.get_credentials()
-        dest_owner = dest_drive.get_credentials()
+        src_owner = src_drive.owner
+        dest_owner = dest_drive.owner
 
         logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(src_drive.name, src_owner.name, src_owner.email))
         logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(dest_drive.name, dest_owner.name, dest_owner.email))
 
     if args.status:
         # Source account credentials
-        src_drive = drive_interface.connect_to_drive('src', build=False)
+        src_drive = drive_interface.Drive(root_path=PATH_ROOT, build=False)
 
         # Destination account credentials
-        dest_drive = drive_interface.connect_to_drive('dest', build=False)
+        dest_drive = box_interface.Box(path_prefix=PATH_ROOT, build=False)
 
-        src_owner = src_drive.get_credentials()
-        dest_owner = dest_drive.get_credentials()
+        src_owner = src_drive.owner
+        dest_owner = dest_drive.owner
 
         logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(src_drive.name, src_owner.name, src_owner.email))
         logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(dest_drive.name, dest_owner.name, dest_owner.email))
 
     if args.printsrc:
         # Source account credentials
-        src_drive = drive_interface.connect_to_drive('src')
+        src_drive = drive_interface.Drive(root_path=PATH_ROOT)
         drive_interface.print_wrapper(args.root, src_drive, args.verbose, args.printtofile, args.generate_xml)
 
     if args.printdest:
         # Destination account credentials
-        dest_drive = drive_interface.connect_to_drive('dest')
+        dest_drive = box_interface.Box(path_prefix=PATH_ROOT)
         drive_interface.print_wrapper(args.root, dest_drive, args.verbose, args.printtofile, args.generate_xml)
 
     if args.updatedrive:
@@ -171,10 +171,10 @@ def main():
         update_log.info("Updating...")
 
         # Source account credentials
-        src_drive = drive_interface.connect_to_drive('src')
+        src_drive = drive_interface.Drive(root_path=PATH_ROOT)
 
         # Destination account credentials
-        dest_drive = drive_interface.connect_to_drive('dest')
+        dest_drive = box_interface.Box(path_prefix=PATH_ROOT)
 
         # Check if we're updating the user
         if (args.updateowner or args.updateperm) and args.newdomain:
@@ -184,10 +184,21 @@ def main():
             UPDATE_PERMISSIONS = args.updateperm
 
         # Update the drive
-        dest_drive.update_drive(src_drive, update_log, base_folder_path=args.root)
+        dest_drive.apply_metadata(src_drive, args.root)
+
+
+def print_matches(drive, box):
+    for box_file in box.files:
+        if drive.get_file_via_path(box_file.path, None):
+            print('Matched file: {0}'.format(box_file.path))
+        else:
+            print('Failed to match file {0}'.format(box_file.path))
 
 
 if __name__ == '__main__':
-    drive_map = drive_interface.Drive('D:')
-    box_map = box_interface.Box('D:')
-    box_map.apply_metadata(drive_map)
+    drive_map = drive_interface.Drive('D:', reset_cred=False)
+    #box_map = box_interface.Box(path_prefix='D:', root_directory='Fivium')
+    #print_matches(drive_map, box_map)
+    #box_map.apply_metadata(drive_map)
+
+    # TODO: test the mapping more thoroughly

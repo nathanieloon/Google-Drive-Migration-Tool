@@ -31,23 +31,29 @@ def _retrieve_all_items(parent_folder):
         if all_items is None:
             all_items = new_items
         else:
-            all_items.update(new_items)
+            all_items = all_items + new_items
         if len(new_items) < REQUEST_COUNT:
             return all_items
         offset += REQUEST_COUNT
 
 
 class Box(object):
-
-    def __init__(self, root_path, oauth_class=OAuth2, force_refresh=True):
+    def __init__(self, path_prefix, root_directory=None, oauth_class=OAuth2, reset_cred=True, build=True):
+        self.name = 'Destination'
         self.client = None
         self.files = None
-        self.root_path = root_path
+        self._owner = None
+        self.path_prefix = path_prefix
 
-        self._authenticate(oauth_class, force_refresh)
-        self._build_box(root_path)
+        self._authenticate(reset_cred, oauth_class)
+        if build:
+            self._build_box(root_directory)
 
-    def _authenticate(self, oauth_class=OAuth2, force_refresh=False):
+    @property
+    def owner(self):
+        return ''
+
+    def _authenticate(self, force_refresh, oauth_class=OAuth2):
         class StoppableWSGIServer(bottle.ServerAdapter):
             def __init__(self, *args, **kwargs):
                 super(StoppableWSGIServer, self).__init__(*args, **kwargs)
@@ -64,7 +70,7 @@ class Box(object):
 
         # Config setup
         cfg = configparser.ConfigParser()
-        cfg.read('app.cfg')
+        cfg.read('fivium_temp.cfg')
         client_id = cfg['client_info']['client_id']
         client_secret = cfg['client_info']['client_secret']
 
@@ -116,17 +122,34 @@ class Box(object):
 
             self.client = Client(oauth)
 
-    def _build_box(self, root_path):
-        box_items = _retrieve_all_items(self.client.folder(folder_id='0'))
-        root_item = BoxObject('0', root_path, None)
+    def _build_box(self, root_directory):
+        root_item = self._get_root(root_directory)
+        box_items = _retrieve_all_items(self.client.folder(folder_id=root_item.id))
         self.files = []
         for item in box_items:
             _create_items(item, root_item, self.files)
 
-    def apply_metadata(self, drive, match_root=''):
-        match_root = self.root_path + match_root
+    def _get_root(self, root_directory):
+        if root_directory is None:
+            return BoxObject('0', self.path_prefix, None)
+        paths = root_directory.split('/')
+        current_folder_id = '0'
+        for path_item in paths:
+            box_items = _retrieve_all_items(self.client.folder(folder_id=current_folder_id))
+            found_path = False
+            for box_item in box_items:
+                if box_item.type == 'folder' and box_item.name == path_item:
+                    found_path = True
+                    current_folder_id = box_item.id
+                    break
+            if not found_path:
+                raise FileNotFoundError('Couldn\'t find the root folder <{0}> in box'.format(root_directory))
+        return BoxObject(current_folder_id, self.path_prefix, None)
+
+    def apply_metadata(self, drive, base_folder_path=''):
+        base_folder_path = self.path_prefix + base_folder_path
         for box_file in self.files:
-            if match_root in box_file.name:
+            if base_folder_path in box_file.name:
                 drive_file = drive.get_file_via_path(box_file.path, None)
                 if drive_file:
                     metadata = self.client.file(box_file.id).metadata('enterprise', 'legacyData')

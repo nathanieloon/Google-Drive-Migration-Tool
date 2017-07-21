@@ -66,16 +66,16 @@ class Drive(object):
 
     """
 
-    def __init__(self, root_path, build=True):
-        self.name = 'Drive'
+    def __init__(self, root_path, reset_cred=True, build=True):
+        self.name = 'Source'
         self.folders = set()
         self.root = None
-        self.owner = None
+        self._owner = None
         self.files = set()
         self.users = set()
         self.root_path = root_path
 
-        self.credentials = _get_credentials()
+        self.credentials = _get_credentials(reset_cred)
         http = self.credentials.authorize(httplib2.Http())
         self.service = discovery.build('drive', 'v3', http=http)
 
@@ -86,6 +86,14 @@ class Drive(object):
             build_logger.debug("Generating paths for <{0}>.".format(self.name))
             self._generate_paths()  # This is expensive, optimise if possible
             build_logger.info("Finished generating paths for <{0}>. Drive has been built.".format(self.name))
+
+    @property
+    def owner(self):
+        if not self._owner:
+            response = self.service.about().get(fields="user").execute()
+            self._owner = self.create_or_retrieve_user(user_email=response['user']['emailAddress'],
+                                                       user_name=response['user']['displayName'])
+        return self._owner
 
     def parse_path(self, path, logger):
         """ Parse a given file path, returning an ordered list of path objects
@@ -304,19 +312,18 @@ class Drive(object):
         response = self.service.files().get(fileId='root',
                                             fields="id, mimeType, name, owners").execute()
         # Set the owner
-        owner = User(name=response['owners'][0]['displayName'],
-                     email=response['owners'][0]['emailAddress'])
-        self.owner = owner
+        self._owner = self.create_or_retrieve_user(response['owners'][0]['emailAddress'],
+                                                   response['owners'][0]['displayName'])
         # Set the root
         root_folder = Folder(identifier=response['id'],
                              name=response['name'],
-                             owner=owner,
+                             owner=self._owner,
                              parents=None,
                              last_modified_time=None,
                              last_modified_by=None,
                              path=self.root_path)
         self.root = root_folder
-        logger.debug("root_folder: {0}, root_owner: {1} ".format(root_folder, owner))
+        logger.debug("root_folder: {0}, root_owner: {1} ".format(root_folder, self._owner))
 
         # Get the rest of the drive
         while True:
@@ -345,7 +352,7 @@ class Drive(object):
                 if 'parents' in result:
                     parents = result['parents']
                 else:
-                    parents = 'root'
+                    parents = [self.root.id]
 
                 # Create drive item
                 if result['mimeType'] == 'application/vnd.google-apps.folder':
@@ -367,6 +374,20 @@ class Drive(object):
                                 last_modified_time=result['modifiedTime'],
                                 last_modified_by=modified_by,
                                 mime_type=result['mimeType'])
+                    if file.mime_type == 'application/vnd.google-apps.document'\
+                            and not file.name.lower().endswith('.docx')\
+                            and not file.name.lower().endswith('.doc')\
+                            and not file.name.lower().endswith('.txt'):
+                        file.name = file.name + '.docx'
+                        print('matched a docx: {0}'.format(file.name))
+                    elif file.mime_type == 'application/vnd.google-apps.spreadsheet'\
+                            and not file.name.lower().endswith('.xlsx')\
+                            and not file.name.lower().endswith('.xls'):
+                        file.name = file.name + '.xlsx'
+                    elif file.mime_type == 'application/vnd.google-apps.presentation'\
+                            and not file.name.lower().endswith('.pptx')\
+                            and not file.name.lower().endswith('.ppt'):
+                        file.name = file.name + '.pptx'
                     self.files.add(file)
                     logger.debug("file: {0}, owner: {1}".format(file, owner))
 
