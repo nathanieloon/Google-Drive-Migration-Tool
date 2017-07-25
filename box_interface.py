@@ -11,6 +11,9 @@ from threading import Thread, Event
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler, make_server
 
 REQUEST_COUNT = 200
+QUERY_STRING = 'a b c d e f g h i j k l m n o p q r s t u v w y z '\
+               + 'A B C D E F G H I J K L M N O P Q R S T U V W X Y Z '\
+               + '0 1 2 3 4 5 6 7 8 9'
 
 
 def _create_items(item, parent, file_list):
@@ -45,8 +48,7 @@ def _map_child_folders(parent_folder, all_folders):
 
 
 class Box(object):
-    def __init__(self, path_prefix, root_directory=None, oauth_class=OAuth2, reset_cred=False, build=True, debug=False):
-        self.name = 'Destination'
+    def __init__(self, path_prefix, root_directory=None, reset_cred=False, debug=False):
         self.client = None
         self.files = []
         self.folders = []
@@ -78,7 +80,7 @@ class Box(object):
             access_token = cfg.get('app_info', 'access_token')
             refresh_token = cfg.get('app_info', 'refresh_token')
 
-            self.client = Client(oauth_class(
+            self.client = Client(OAuth2(
                 client_id=client_id,
                 client_secret=client_secret,
                 access_token=access_token,
@@ -99,7 +101,7 @@ class Box(object):
             server_thread = Thread(target=lambda: local_oauth_redirect.run(server=local_server))
             server_thread.start()
 
-            oauth = oauth_class(
+            oauth = OAuth2(
                 client_id=client_id,
                 client_secret=client_secret,
             )
@@ -121,90 +123,84 @@ class Box(object):
 
             self.client = Client(oauth)
 
-        if build:
-            '''
-            root_item = self._get_root(root_directory)
-            box_items = _retrieve_all_items(self.client.folder(folder_id=root_item.id))
-            for item in box_items:
-                _create_items(item, root_item, self.files)
-            '''
+        # Build the Box:
 
-            # Setup the root
-            root_folder = self._get_root_folder(root_directory)
+        # Setup the root
+        root_folder = self._get_root_folder(root_directory)
+        if debug:
+            print('root folder has id: {0}'.format(str(root_folder.object_id)))
+        root_object = BoxObject(identifier=root_folder.object_id, name=self.path_prefix)
+        raw_files = []
+        raw_folders = [root_object]
+
+        # Retrieve all descendant files of the root
+        offset = 0
+        while True:
+            retrieved_files = self.client.search(query=QUERY_STRING,
+                                                 limit=REQUEST_COUNT,
+                                                 offset=offset,
+                                                 result_type='file')
+
             if debug:
-                print('root folder has id: {0}'.format(str(root_folder.object_id)))
-            root_object = BoxObject(identifier=root_folder.object_id, name=self.path_prefix)
-            raw_files = []
-            raw_folders = [root_object]
+                print('retreived files #{0} to #{1}'.format(str(offset + 1), str(offset + len(retrieved_files))))
+            offset += REQUEST_COUNT
 
-            # Retrieve all descendant files of the root
-            offset = 0
-            while True:
-                retrieved_files = self.client.search(query='a b c d e f g h i j k l m n o p q r s t u v w y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9',
-                                                     limit=REQUEST_COUNT,
-                                                     offset=offset,
-                                                     result_type='file')
+            for box_file in retrieved_files:
+                raw_files.append(BoxObject(identifier=box_file.id,
+                                           name=box_file.name,
+                                           parent_id=box_file.parent['id'] if box_file.parent else None))
 
-                if debug:
-                    print('retreived files #{0} to #{1}'.format(str(offset + 1), str(offset + len(retrieved_files))))
-                offset += REQUEST_COUNT
+            if len(retrieved_files) < REQUEST_COUNT:
+                # No more files
+                break
 
-                for box_file in retrieved_files:
-                    raw_files.append(BoxObject(identifier=box_file.id,
-                                               name=box_file.name,
-                                               parent_id=box_file.parent['id'] if box_file.parent else None))
+        # Retrieve all descendant folders of the root
+        offset = 0
+        while True:
+            retrieved_folders = self.client.search(query=QUERY_STRING,
+                                                   limit=REQUEST_COUNT,
+                                                   offset=offset,
+                                                   result_type='folder')
 
-                if len(retrieved_files) < REQUEST_COUNT:
-                    # No more files
-                    break
+            if debug:
+                print('retreived folders #{0} to #{1}'.format(str(offset + 1),
+                                                              str(offset + len(retrieved_folders))))
+            offset += REQUEST_COUNT
 
-            # Retrieve all descendant folders of the root
-            offset = 0
-            while True:
-                retrieved_folders = self.client.search(query='a b c d e f g h i j k l m n o p q r s t u v w y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9',
-                                                       limit=REQUEST_COUNT,
-                                                       offset=offset,
-                                                       result_type='folder')
+            for box_folder in retrieved_folders:
+                raw_folders.append(BoxObject(identifier=box_folder.id,
+                                             name=box_folder.name,
+                                             parent_id=box_folder.parent['id'] if box_folder.parent else None))
 
-                if debug:
-                    print('retreived folders #{0} to #{1}'.format(str(offset + 1),
-                                                                  str(offset + len(retrieved_folders))))
-                offset += REQUEST_COUNT
+            if len(retrieved_folders) < REQUEST_COUNT:
+                # No more files
+                break
 
-                for box_folder in retrieved_folders:
-                    raw_folders.append(BoxObject(identifier=box_folder.id,
-                                                 name=box_folder.name,
-                                                 parent_id=box_folder.parent['id'] if box_folder.parent else None))
-
-                if len(retrieved_folders) < REQUEST_COUNT:
-                    # No more files
-                    break
-
-            # Map the parents
-            _map_child_folders(root_object, raw_folders)
-            for file in raw_files:
-                for folder in raw_folders:
-                    if file.parent_id == folder.id:
-                        file.set_parent(folder)
-                        break
-
-            # omit files marked for deletion TODO: remove this for final migration
-            for file in raw_files:
-                if not (file.path and 'zz. Duplicates to be deleted' in file.path):
-                    self.files.append(file)
-
+        # Map the parents
+        _map_child_folders(root_object, raw_folders)
+        for file in raw_files:
             for folder in raw_folders:
-                if not (folder.path and 'zz. Duplicates to be deleted' in folder.path):
-                    self.folders.append(folder)
+                if file.parent_id == folder.id:
+                    file.set_parent(folder)
+                    break
 
-            if debug:
-                print('Mapped {0} files and {1} folders'.format(str(len(self.files)), str(len(self.folders))))
-                for folder in self.folders:
-                    if folder.path is None:
-                        print("Found an orphaned folder with name {0} and id {1}".format(folder.name, str(folder.id)))
-                for file in self.files:
-                    if file.path is None:
-                        print("Found an orphaned file with name {0} and id {1}".format(file.name, str(file.id)))
+        # omit files marked for deletion TODO: remove this for final migration
+        for file in raw_files:
+            if not (file.path and 'zz. Duplicates to be deleted' in file.path):
+                self.files.append(file)
+
+        for folder in raw_folders:
+            if not (folder.path and 'zz. Duplicates to be deleted' in folder.path):
+                self.folders.append(folder)
+
+        if debug:
+            print('Mapped {0} files and {1} folders'.format(str(len(self.files)), str(len(self.folders))))
+            for folder in self.folders:
+                if folder.path is None:
+                    print("Found an orphaned folder with name {0} and id {1}".format(folder.name, str(folder.id)))
+            for file in self.files:
+                if file.path is None:
+                    print("Found an orphaned file with name {0} and id {1}".format(file.name, str(file.id)))
 
     @property
     def owner(self):

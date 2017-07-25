@@ -26,8 +26,6 @@ PATH_ROOT = 'D:'                                    # Root drive (set this to wh
 UPDATE_OWNER = False                                # Option for updating the owner of the file to a new domain
 UPDATE_PERMISSIONS = False                          # Update file/folder permissions
 NEW_DOMAIN = None                                   # New domain to migrate to
-ROOT_FOLDER = PATH_ROOT                             # Root folder to start in for migration
-FLAGS = None                                        # Flags for Google credentials
 
 
 def build_arg_parser():
@@ -46,51 +44,66 @@ def build_arg_parser():
         if action.dest != 'help':
             action.help = argparse.SUPPRESS
 
-    parser.add_argument('-r', '--root', type=str, default=ROOT_FOLDER,
-                        help='Path to folder to start in (eg "D:/test"). Defaults to root Drive directory')
-    parser.add_argument('-f', '--prefix', type=str,
-                        help='Prefix letter for the drive (eg "D")')
+    parser.add_argument('-r', '--rootdrive', type=str, default=None,
+                        help='Path to folder within Drive to start in (eg "D:/test"). Defaults to root Drive directory')
+    parser.add_argument('-R', '--rootbox', type=str, default=None,
+                        help='Path to folder within Box to start in (eg "D:/test"). Defaults to root Drive directory')
     parser.add_argument('-l', '--log-level', type=str, default=logging.INFO,
                         help='Logging level for output')
+    parser.add_argument('-c', '--credentials', type=str, default=logging.INFO,
+                        help='Force a reset of the drive/box web credentials')
 
     # Function group
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('-p', '--printsrc', action='store_true',
+    group.add_argument('-p', '--printdrive', action='store_true',
                        help='Print the source Drive')
-    group.add_argument('-P', '--printdest', action='store_true',
-                       help='Print the destination Drive')
+    group.add_argument('-P', '--printbox', action='store_true',
+                       help='Print the destination Box')
     group.add_argument('-u', '--updatedrive', action='store_true',
-                       help='Update the destination Drive using the meta data from the source Drive')
-    group.add_argument('-s', '--status', action='store_true',
-                       help='Display the current logins for the Drives')
-    group.add_argument('-S', '--setup', action='store_true',
-                       help='Setup the logins for the Drives')
+                       help='Update the destination Box using the metadata from the source Drive')
 
     # Verbose printing
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Verbose printing of the tree')
-    parser.add_argument('-F', '--printtofile', type=str,
-                        help='Save the tree to a file instead of stdout. Must be used with one of the print Drive options.')
-    parser.add_argument('-x', '--generate-xml', type=str,
-                        help='Output the tree to an XML file. Must be used with one of the print Drive options.')
-
-    # Updating permission options
-    parser.add_argument('-uo', '--updateowner', action='store_true',
-                        help='Flag for updating the owner to the new domain')
-    parser.add_argument('-d', '--newdomain', type=str,
-                        help='Destination domain (eg "test.com")')
-    parser.add_argument('-up', '--updateperm', action='store_true',
-                        help='Flag for updating the permissions for the file to the new domain')
-
+    parser.add_argument('-M', '--match', action='store_true',
+                        help='Print a list of matched files. Must be used with the update option')
+    parser.add_argument('-m', '--miss', action='store_true',
+                        help='Print a list of files which were not matched. Must be used with the update option')
+    parser.add_argument('-f', '--printtofile', type=str,
+                        help='Save any printed information to a file.')
     return parser
+
+
+def migrate_metadata(box, drive, print_match=False, print_miss=False, printFile=None):
+    matched_files = []
+    missed_files = []
+    for box_file in box.files:
+        drive_file = drive.get_file_via_path(box_file.path, None)
+        if drive_file:
+            matched_files.append(box_file.path)
+            box.apply_metadata(box_file, drive_file)
+        else:
+            missed_files.append(box_file.path)
+
+    print('Matched {0} files; missed {1} files.'.format(str(len(matched_files)), str(len(missed_files))))
+
+    if print_match:
+        matched_files.sort()
+        print("Matched {0} files:".format(str(len(matched_files))))
+        for file_path in matched_files:
+            print('\t' + file_path)
+
+    if print_miss:
+        print("Failed to match {0} files:".format(str(len(missed_files))))
+        missed_files.sort()
+        for file_path in missed_files:
+            print('\t' + file_path)
 
 
 def main():
     # Args parsing
     parser = build_arg_parser()
     args = parser.parse_args()
-    global FLAGS
-    FLAGS = args
 
     # Setup logger
     timestr = time.strftime("%Y%m%d-%H%M%S")
@@ -108,142 +121,29 @@ def main():
     log_arg = logging.getLogger('args')
     log_arg.debug(args)
 
-    if args.prefix:
-        # Set the Drive prefix
-        global PATH_ROOT
-        PATH_ROOT = args.prefix + ":"
-
-    if args.root:
-        # Set the root folder
-        if PATH_ROOT not in args.root:
-            log_arg.info("Error: The Drive prefix {0} is not in the supplied path.".format(PATH_ROOT))
-            sys.exit()
-
-        global ROOT_FOLDER
-        ROOT_FOLDER = args.root
-
-    if (args.printtofile or args.generate_xml) and not (args.printsrc or args.printdest):
-        parser.error("Error: The --printsrc or --printdest options must be used with the --printtofile and --generate-xml options.")
-        sys.exit()
-
-    if args.setup:
+    if args.printdrive:
         # Source account credentials
-        src_drive = drive_interface.Drive(root_path=PATH_ROOT, build=False, reset_cred=True)
-
-        # Destination account credentials
-        dest_drive = box_interface.Box(path_prefix=PATH_ROOT, build=False, reset_cred=True)
-
-        src_owner = src_drive.owner
-        dest_owner = dest_drive.owner
-
-        logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(src_drive.name, src_owner.name, src_owner.email))
-        logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(dest_drive.name, dest_owner.name, dest_owner.email))
-
-    if args.status:
-        # Source account credentials
-        src_drive = drive_interface.Drive(root_path=PATH_ROOT, build=False)
-
-        # Destination account credentials
-        dest_drive = box_interface.Box(path_prefix=PATH_ROOT, build=False)
-
-        src_owner = src_drive.owner
-        dest_owner = dest_drive.owner
-
-        logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(src_drive.name, src_owner.name, src_owner.email))
-        logging.info("The <{0}> Drive is logged into <{1} ({2})>".format(dest_drive.name, dest_owner.name, dest_owner.email))
-
-    if args.printsrc:
-        # Source account credentials
-        src_drive = drive_interface.Drive(root_path=PATH_ROOT)
+        src_drive = drive_interface.Drive(root_path=PATH_ROOT, reset_cred=True, flags=args)
         drive_interface.print_wrapper(args.root, src_drive, args.verbose, args.printtofile, args.generate_xml)
-
-    if args.printdest:
+    elif args.printbox:
         # Destination account credentials
-        dest_drive = box_interface.Box(path_prefix=PATH_ROOT)
-        drive_interface.print_wrapper(args.root, dest_drive, args.verbose, args.printtofile, args.generate_xml)
-
-    if args.updatedrive:
+        dest_box = box_interface.Box(path_prefix=PATH_ROOT, root_directory=args.rootbox, reset_cred=True)
+        drive_interface.print_wrapper(args.root, dest_box, args.verbose, args.printtofile, args.generate_xml)
+    elif args.updatedrive:
         update_log = logging.getLogger('update')
         # Check --newdomain is set
         if (args.updateowner or args.updateperm) and args.newdomain is None:
             parser.error("--updateuser and --updateperm require --newdomain")
 
         update_log.info("Updating...")
-
-        # Source account credentials
-        src_drive = drive_interface.Drive(root_path=PATH_ROOT)
+        src_drive = drive_interface.Drive(root_path=PATH_ROOT, reset_cred=True, flags=args)
 
         # Destination account credentials
-        dest_drive = box_interface.Box(path_prefix=PATH_ROOT)
-
-        # Check if we're updating the user
-        if (args.updateowner or args.updateperm) and args.newdomain:
-            global NEW_DOMAIN, UPDATE_OWNER, UPDATE_PERMISSIONS
-            NEW_DOMAIN = args.newdomain
-            UPDATE_OWNER = args.updateowner
-            UPDATE_PERMISSIONS = args.updateperm
+        dest_box = box_interface.Box(path_prefix=PATH_ROOT, root_directory=args.rootbox, reset_cred=True)
 
         # Update the drive
-        dest_drive.apply_metadata(src_drive)
-
-
-def print_matches(drive, box):
-    matched_files = []
-    missed_files = []
-    for box_file in box.files:
-        if drive.get_file_via_path(box_file.path, None):
-            matched_files.append(box_file.path)
-        else:
-            missed_files.append(box_file.path)
-
-    matched_files.sort()
-    missed_files.sort()
-    print('Matched {0} files; missed {1} files.'.format(str(len(matched_files)), str(len(missed_files))))
-    print_input = input('Print matched files? y/n')
-    if print_input == 'y':
-        for file in matched_files:
-            print(file)
-    print_input = input('Print missed files? y/n')
-    if print_input == 'y':
-        for file in missed_files:
-            print(file)
-
-
-def apply_metadata(box, drive):
-    matches = []
-    misses = []
-    for box_file in box.files:
-        drive_file = drive.get_file_via_path(box_file.path, None)
-        if drive_file:
-            matches.append(box_file.path)
-            box.apply_metadata(box_file, drive_file)
-        else:
-            misses.append(box_file.path)
-
-    print('Matched {0} files; missed {1} files.'.format(str(len(matches)), str(len(misses))))
-    print_input = input('Print matched files? y/n')
-    if print_input == 'y':
-        for file in matches:
-            print(file)
-    print_input = input('Print missed files? y/n')
-    if print_input == 'y':
-        for file in misses:
-            print(file)
+        migrate_metadata(box=dest_box, drive=src_drive)
 
 
 if __name__ == '__main__':
-    print('Mapping Box. Time is at {0}'.format(str(time.clock())))
-    box_map = box_interface.Box(path_prefix='D:', root_directory='Fivium', debug=False, reset_cred=False)
-    print('Box Mapped. Time is at {0}'.format(str(time.clock())))
-
-    print('Mapping Google Drive. Time is at {0}'.format(str(time.clock())))
-    drive_map = drive_interface.Drive('D:', reset_cred=False)
-    print('Google Drive Mapped. Time is at {0}'.format(str(time.clock())))
-
-    # print('Matching files. Time is at {0}'.format(str(time.clock())))
-    # print_matches(drive_map, box_map)
-    # print('Files matched. Time is at {0}'.format(str(time.clock())))
-
-    print('Applying metadata. Time is at {0}'.format(str(time.clock())))
-    box_map.apply_metadata(drive_map)
-    print('Metadata Applied. Time is at {0}'.format(str(time.clock())))
+    main()

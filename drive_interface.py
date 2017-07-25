@@ -11,14 +11,7 @@ from oauth2client import client, tools
 from oauth2client.file import Storage
 
 
-# Global variables
-SCOPES = 'https://www.googleapis.com/auth/drive'    # Scope for Google Drive authentication
-CLIENT_SECRET_FILE = 'client_secret.json'           # Client secret
-APPLICATION_NAME = 'Drive Migration Tool'           # App name
-FLAGS = None                                        # Flags for Google credentials
-
-
-def _get_credentials(reset=False):
+def _get_credentials(reset=False, flags=None):
     """Gets valid user credentials from storage.
 
     If nothing has been stored, or if the stored credentials are invalid,
@@ -36,9 +29,10 @@ def _get_credentials(reset=False):
     store = Storage(credential_path)
     credentials = store.get()
     if not credentials or credentials.invalid or reset:
-        flow = client.flow_from_clientsecrets(CLIENT_SECRET_FILE, SCOPES)
-        flow.user_agent = APPLICATION_NAME
-        credentials = tools.run_flow(flow, store, FLAGS)
+        flow = client.flow_from_clientsecrets('client_secret.json',
+                                              'https://www.googleapis.com/auth/drive')
+        flow.user_agent = 'Drive Migration Tool'
+        credentials = tools.run_flow(flow, store, flags)
         logging.info('Storing credentials to ' + credential_path)
     return credentials
 
@@ -66,7 +60,7 @@ class Drive(object):
 
     """
 
-    def __init__(self, root_path, reset_cred=True, build=True):
+    def __init__(self, root_path, reset_cred=True, flags=None):
         self.name = 'Source'
         self.folders = set()
         self.root = None
@@ -75,17 +69,16 @@ class Drive(object):
         self.users = set()
         self._root_path = root_path
 
-        self._credentials = _get_credentials(reset_cred)
+        self._credentials = _get_credentials(reset=reset_cred, flags=flags)
         http = self._credentials.authorize(httplib2.Http())
         self.service = discovery.build('drive', 'v3', http=http)
 
-        if build:
-            # Initialise the drive
-            build_logger = logging.getLogger('build-drive')
-            self._build_drive(build_logger)
-            build_logger.debug("Generating paths for <{0}>.".format(self.name))
-            self._generate_paths()  # This is expensive, optimise if possible
-            build_logger.info("Finished generating paths for <{0}>. Drive has been built.".format(self.name))
+        # Initialise the drive
+        build_logger = logging.getLogger('build-drive')
+        self._build_drive(build_logger)
+        build_logger.debug("Generating paths for <{0}>.".format(self.name))
+        self._generate_paths()  # This is expensive, optimise if possible
+        build_logger.info("Finished generating paths for <{0}>. Drive has been built.".format(self.name))
 
     @property
     def owner(self):
@@ -159,12 +152,12 @@ class Drive(object):
         """ Print the drive structure from the given root folder
 
         Args:
-            base_folder_path (str, optional): Base folder path, defaults to
-                the root folder
+            base_folder_path (str, optional): Base folder path, defaults to the root folder
             verbose (bool, optional): Verbose printing on/off, defaults to off
             curr_folder (Folder, optional): Current folder being printed
-            prefix (str, optional): Prefix for indenting/formatting the
-                printing
+            prefix (str, optional): Prefix for indenting/formatting the printing
+            logger (logger): Object to which to write all logging
+            output_file (file, optional): File to write the structure to
 
         """
         # If we're looking at the base folder, set it as the current folder
