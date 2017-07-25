@@ -184,21 +184,66 @@ def main():
             UPDATE_PERMISSIONS = args.updateperm
 
         # Update the drive
-        dest_drive.apply_metadata(src_drive, args.root)
+        dest_drive.apply_metadata(src_drive)
 
 
 def print_matches(drive, box):
+    matched_files = []
+    missed_files = []
     for box_file in box.files:
         if drive.get_file_via_path(box_file.path, None):
-            print('Matched file: {0}'.format(box_file.path))
+            matched_files.append(box_file.path)
         else:
-            print('Failed to match file {0}'.format(box_file.path))
+            missed_files.append(box_file.path)
+
+    matched_files.sort()
+    missed_files.sort()
+    print('Matched {0} files; missed {1} files.'.format(str(len(matched_files)), str(len(missed_files))))
+    print_input = input('Print matched files? y/n')
+    if print_input == 'y':
+        for file in matched_files:
+            print(file)
+    print_input = input('Print missed files? y/n')
+    if print_input == 'y':
+        for file in missed_files:
+            print(file)
+
+
+def apply_metadata(box, drive):
+    matches = []
+    misses = []
+    for box_file in box.files:
+        drive_file = drive.get_file_via_path(box_file.path, None)
+        if drive_file:
+            matches.append(box_file.path)
+            box.apply_metadata(box_file, drive_file)
+        else:
+            misses.append(box_file.path)
+
+    print('Matched {0} files; missed {1} files.'.format(str(len(matches)), str(len(misses))))
+    print_input = input('Print matched files? y/n')
+    if print_input == 'y':
+        for file in matches:
+            print(file)
+    print_input = input('Print missed files? y/n')
+    if print_input == 'y':
+        for file in misses:
+            print(file)
 
 
 if __name__ == '__main__':
-    drive_map = drive_interface.Drive('D:', reset_cred=False)
-    #box_map = box_interface.Box(path_prefix='D:', root_directory='Fivium')
-    #print_matches(drive_map, box_map)
-    #box_map.apply_metadata(drive_map)
+    print('Mapping Box. Time is at {0}'.format(str(time.clock())))
+    box_map = box_interface.Box(path_prefix='D:', root_directory='Fivium', debug=False, reset_cred=False)
+    print('Box Mapped. Time is at {0}'.format(str(time.clock())))
 
-    # TODO: test the mapping more thoroughly
+    print('Mapping Google Drive. Time is at {0}'.format(str(time.clock())))
+    drive_map = drive_interface.Drive('D:', reset_cred=False)
+    print('Google Drive Mapped. Time is at {0}'.format(str(time.clock())))
+
+    # print('Matching files. Time is at {0}'.format(str(time.clock())))
+    # print_matches(drive_map, box_map)
+    # print('Files matched. Time is at {0}'.format(str(time.clock())))
+
+    print('Applying metadata. Time is at {0}'.format(str(time.clock())))
+    box_map.apply_metadata(drive_map)
+    print('Metadata Applied. Time is at {0}'.format(str(time.clock())))

@@ -6,11 +6,11 @@ import bottle
 import configparser
 import webbrowser
 
-from boxsdk import Client, OAuth2
+from boxsdk import Client, OAuth2, exception
 from threading import Thread, Event
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler, make_server
 
-REQUEST_COUNT = 100
+REQUEST_COUNT = 200
 
 
 def _create_items(item, parent, file_list):
@@ -37,23 +37,22 @@ def _retrieve_all_items(parent_folder):
         offset += REQUEST_COUNT
 
 
+def _map_child_folders(parent_folder, all_folders):
+    for folder in all_folders:
+        if folder.parent_id == parent_folder.id:
+            folder.set_parent(parent_folder)
+            _map_child_folders(folder, all_folders)
+
+
 class Box(object):
-    def __init__(self, path_prefix, root_directory=None, oauth_class=OAuth2, reset_cred=True, build=True):
+    def __init__(self, path_prefix, root_directory=None, oauth_class=OAuth2, reset_cred=False, build=True, debug=False):
         self.name = 'Destination'
         self.client = None
-        self.files = None
+        self.files = []
+        self.folders = []
         self._owner = None
         self.path_prefix = path_prefix
 
-        self._authenticate(reset_cred, oauth_class)
-        if build:
-            self._build_box(root_directory)
-
-    @property
-    def owner(self):
-        return ''
-
-    def _authenticate(self, force_refresh, oauth_class=OAuth2):
         class StoppableWSGIServer(bottle.ServerAdapter):
             def __init__(self, *args, **kwargs):
                 super(StoppableWSGIServer, self).__init__(*args, **kwargs)
@@ -75,7 +74,7 @@ class Box(object):
         client_secret = cfg['client_info']['client_secret']
 
         # Verify if there is a valid token already
-        if 'app_info' in cfg and not force_refresh:
+        if 'app_info' in cfg and not reset_cred:
             access_token = cfg.get('app_info', 'access_token')
             refresh_token = cfg.get('app_info', 'refresh_token')
 
@@ -117,50 +116,135 @@ class Box(object):
 
             cfg['app_info']['access_token'] = access_token
             cfg['app_info']['refresh_token'] = refresh_token
-            with open('app.cfg', 'w') as configfile:
+            with open('fivium_temp.cfg', 'w') as configfile:
                 cfg.write(configfile)
 
             self.client = Client(oauth)
 
-    def _build_box(self, root_directory):
-        root_item = self._get_root(root_directory)
-        box_items = _retrieve_all_items(self.client.folder(folder_id=root_item.id))
-        self.files = []
-        for item in box_items:
-            _create_items(item, root_item, self.files)
+        if build:
+            '''
+            root_item = self._get_root(root_directory)
+            box_items = _retrieve_all_items(self.client.folder(folder_id=root_item.id))
+            for item in box_items:
+                _create_items(item, root_item, self.files)
+            '''
+
+            # Setup the root
+            root_folder = self._get_root_folder(root_directory)
+            if debug:
+                print('root folder has id: {0}'.format(str(root_folder.object_id)))
+            root_object = BoxObject(identifier=root_folder.object_id, name=self.path_prefix)
+            raw_files = []
+            raw_folders = [root_object]
+
+            # Retrieve all descendant files of the root
+            offset = 0
+            while True:
+                retrieved_files = self.client.search(query='a b c d e f g h i j k l m n o p q r s t u v w y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9',
+                                                     limit=REQUEST_COUNT,
+                                                     offset=offset,
+                                                     result_type='file')
+
+                if debug:
+                    print('retreived files #{0} to #{1}'.format(str(offset + 1), str(offset + len(retrieved_files))))
+                offset += REQUEST_COUNT
+
+                for box_file in retrieved_files:
+                    raw_files.append(BoxObject(identifier=box_file.id,
+                                               name=box_file.name,
+                                               parent_id=box_file.parent['id'] if box_file.parent else None))
+
+                if len(retrieved_files) < REQUEST_COUNT:
+                    # No more files
+                    break
+
+            # Retrieve all descendant folders of the root
+            offset = 0
+            while True:
+                retrieved_folders = self.client.search(query='a b c d e f g h i j k l m n o p q r s t u v w y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9',
+                                                       limit=REQUEST_COUNT,
+                                                       offset=offset,
+                                                       result_type='folder')
+
+                if debug:
+                    print('retreived folders #{0} to #{1}'.format(str(offset + 1),
+                                                                  str(offset + len(retrieved_folders))))
+                offset += REQUEST_COUNT
+
+                for box_folder in retrieved_folders:
+                    raw_folders.append(BoxObject(identifier=box_folder.id,
+                                                 name=box_folder.name,
+                                                 parent_id=box_folder.parent['id'] if box_folder.parent else None))
+
+                if len(retrieved_folders) < REQUEST_COUNT:
+                    # No more files
+                    break
+
+            # Map the parents
+            _map_child_folders(root_object, raw_folders)
+            for file in raw_files:
+                for folder in raw_folders:
+                    if file.parent_id == folder.id:
+                        file.set_parent(folder)
+                        break
+
+            # omit files marked for deletion TODO: remove this for final migration
+            for file in raw_files:
+                if not (file.path and 'zz. Duplicates to be deleted' in file.path):
+                    self.files.append(file)
+
+            for folder in raw_folders:
+                if not (folder.path and 'zz. Duplicates to be deleted' in folder.path):
+                    self.folders.append(folder)
+
+            if debug:
+                print('Mapped {0} files and {1} folders'.format(str(len(self.files)), str(len(self.folders))))
+                for folder in self.folders:
+                    if folder.path is None:
+                        print("Found an orphaned folder with name {0} and id {1}".format(folder.name, str(folder.id)))
+                for file in self.files:
+                    if file.path is None:
+                        print("Found an orphaned file with name {0} and id {1}".format(file.name, str(file.id)))
+
+    @property
+    def owner(self):
+        # TODO: make this return something useful
+        return ''
 
     def _get_root(self, root_directory):
+        root_box_folder = self._get_root_folder(root_directory)
+        return BoxObject(root_box_folder.id, self.path_prefix, None)
+
+    def _get_root_folder(self, root_directory):
+        current_folder = self.client.folder('0')
         if root_directory is None:
-            return BoxObject('0', self.path_prefix, None)
+            return current_folder
         paths = root_directory.split('/')
-        current_folder_id = '0'
         for path_item in paths:
-            box_items = _retrieve_all_items(self.client.folder(folder_id=current_folder_id))
+            box_items = _retrieve_all_items(current_folder)
             found_path = False
             for box_item in box_items:
                 if box_item.type == 'folder' and box_item.name == path_item:
                     found_path = True
-                    current_folder_id = box_item.id
+                    current_folder = box_item
                     break
             if not found_path:
                 raise FileNotFoundError('Couldn\'t find the root folder <{0}> in box'.format(root_directory))
-        return BoxObject(current_folder_id, self.path_prefix, None)
+        return current_folder
 
-    def apply_metadata(self, drive, base_folder_path=''):
-        base_folder_path = self.path_prefix + base_folder_path
-        for box_file in self.files:
-            if base_folder_path in box_file.name:
-                drive_file = drive.get_file_via_path(box_file.path, None)
-                if drive_file:
-                    metadata = self.client.file(box_file.id).metadata('enterprise', 'legacyData')
-                    if metadata.get() is None:
-                        metadata.create({'owner': drive_file.owner.name,
-                                         'legacyCreatedDate': drive_file.created_time,
-                                         'legacyLastModifyingUser': drive_file.last_modified_by.name,
-                                         'legacyLastModifiedDate': drive_file.last_modified_time})
-                        print('matched file: ' + box_file.path)
-                    else:
-                        print('The legacy metadata already exists for ' + box_file.path + ', skipping')
+    def apply_metadata(self, box_file, drive_file):
+        metadata = self.client.file(box_file.id).metadata('enterprise', 'legacyData')
+        try:
+            if metadata.get() is None:
+                metadata.create({'owner': drive_file.owner.name,
+                                 'legacyCreatedDate': drive_file.created_time,
+                                 'legacyLastModifyingUser': drive_file.last_modified_by.name,
+                                 'legacyLastModifiedDate': drive_file.last_modified_time})
+        except exception.BoxAPIException:
+            metadata.create({'owner': drive_file.owner.name,
+                             'legacyCreatedDate': drive_file.created_time,
+                             'legacyLastModifyingUser': drive_file.last_modified_by.name,
+                             'legacyLastModifiedDate': drive_file.last_modified_time})
 
 
 class BoxObject(object):
@@ -182,15 +266,25 @@ class BoxObject(object):
     def __init__(self,
                  identifier,
                  name,
-                 parent):
+                 parent=None,
+                 parent_id=None):
         self.id = identifier
         self.name = name
+        if '002f' in self.name:
+            self.name = self.name.replace('002f', '/')
+            self.name = self.name.replace(' - Modify', '')
         self.parent = parent
+        self.parent_id = parent_id
+        self.path = None
 
         if self.parent is not None:
             self.path = self.parent.path + '/' + self.name
-        else:
+        elif self.parent_id is None:
             self.path = name
 
     def __repr__(self):
         return "<file: {0}>".format(self.name)
+
+    def set_parent(self, parent):
+        self.parent = parent
+        self.path = self.parent.path + '/' + self.name

@@ -73,10 +73,10 @@ class Drive(object):
         self._owner = None
         self.files = set()
         self.users = set()
-        self.root_path = root_path
+        self._root_path = root_path
 
-        self.credentials = _get_credentials(reset_cred)
-        http = self.credentials.authorize(httplib2.Http())
+        self._credentials = _get_credentials(reset_cred)
+        http = self._credentials.authorize(httplib2.Http())
         self.service = discovery.build('drive', 'v3', http=http)
 
         if build:
@@ -99,22 +99,23 @@ class Drive(object):
         """ Parse a given file path, returning an ordered list of path objects
 
         Args:
-            path (str): Path to file/folder
+            path   (str)    Path to file/folder
+            logger (logger) Object to which to write all logging
 
         Returns:
             [Folder/File]: Ordered list of folders/file objects
 
         """
-        if self.root_path not in path:
+        if self._root_path not in path:
             logger.error("Invalid path <{0}>.".format(path))
             return None
 
-        if path == self.root_path:
+        if path == self._root_path:
             # We're looking at root
             return [self.root]
 
         # Strip out the prefix
-        path = path.replace(self.root_path, '')
+        path = path.replace(self._root_path, '')
         path_list = path.split('/')
 
         # Build the list of path objects
@@ -148,7 +149,7 @@ class Drive(object):
 
         if not any(obj.name == path_list[-1] for obj in path_objects) or len(path_objects) == 0:
             logger.error("Path <{0}> could not be found. Only found: <{1}>".format(
-                self.root_path + path, path_objects))
+                self._root_path + path, path_objects))
             return None
 
         # Return the path objects
@@ -212,19 +213,19 @@ class Drive(object):
                 if curr_folder.id in folder.parents:
                     self.print_drive(verbose=verbose,
                                      logger=logger,
-                                     base_folder_path=self.root_path,
+                                     base_folder_path=self._root_path,
                                      curr_folder=folder,
                                      prefix=prefix + "\t",
                                      output_file=output_file)
 
     def create_or_retrieve_user(self, user_email, user_name):
-        """Get a user by email, or add them if they don't already exist
+        """Get a user by their email if they exist, otherwise add them
         """
 
         for user in self.users:
             if user.email == user_email:
                 return user
-        new_user = User(user_name, user_email)
+        new_user = DriveUser(user_name, user_email)
         self.users.add(new_user)
         return new_user
 
@@ -245,9 +246,9 @@ class Drive(object):
         for folder in self.folders:
             if folder.path == path:
                 return folder
-
-        logger.error("Could not find folder at <{0}> in <{1}>.".format(
-            path, self.name))
+            
+        if logger:
+            logger.error("Could not find folder at <{0}> in <{1}>.".format(path, self.name))
         return None
 
     def _generate_paths(self, curr_item=None, curr_path=None):
@@ -304,8 +305,6 @@ class Drive(object):
         Build the Drive objects from the provided API point.
 
         """
-        page_token = None
-        page_no = 1
         logger.info("Retrieving drive data for <{0}>...".format(self.name))
 
         # Get the root "My Drive" folder first
@@ -315,15 +314,18 @@ class Drive(object):
         self._owner = self.create_or_retrieve_user(response['owners'][0]['emailAddress'],
                                                    response['owners'][0]['displayName'])
         # Set the root
-        root_folder = Folder(identifier=response['id'],
-                             name=response['name'],
-                             owner=self._owner,
-                             parents=None,
-                             last_modified_time=None,
-                             last_modified_by=None,
-                             path=self.root_path)
+        root_folder = DriveFolder(identifier=response['id'],
+                                  name=response['name'],
+                                  owner=self._owner,
+                                  parents=None,
+                                  last_modified_time=None,
+                                  last_modified_by=None,
+                                  path=self._root_path)
         self.root = root_folder
         logger.debug("root_folder: {0}, root_owner: {1} ".format(root_folder, self._owner))
+
+        page_token = None
+        page_no = 1
 
         # Get the rest of the drive
         while True:
@@ -356,30 +358,29 @@ class Drive(object):
 
                 # Create drive item
                 if result['mimeType'] == 'application/vnd.google-apps.folder':
-                    folder = Folder(identifier=result['id'],
-                                    name=result['name'],
-                                    owner=owner,
-                                    parents=parents,
-                                    created_time=result['createdTime'],
-                                    last_modified_time=result['modifiedTime'],
-                                    last_modified_by=modified_by)
+                    folder = DriveFolder(identifier=result['id'],
+                                         name=result['name'],
+                                         owner=owner,
+                                         parents=parents,
+                                         created_time=result['createdTime'],
+                                         last_modified_time=result['modifiedTime'],
+                                         last_modified_by=modified_by)
                     self.folders.add(folder)
                     logger.debug("folder: {0}, owner: {1}".format(folder, owner))
                 else:
-                    file = File(identifier=result['id'],
-                                name=result['name'],
-                                owner=owner,
-                                parents=parents,
-                                created_time=result['createdTime'],
-                                last_modified_time=result['modifiedTime'],
-                                last_modified_by=modified_by,
-                                mime_type=result['mimeType'])
+                    file = DriveFile(identifier=result['id'],
+                                     name=result['name'],
+                                     owner=owner,
+                                     parents=parents,
+                                     created_time=result['createdTime'],
+                                     last_modified_time=result['modifiedTime'],
+                                     last_modified_by=modified_by,
+                                     mime_type=result['mimeType'])
                     if file.mime_type == 'application/vnd.google-apps.document'\
                             and not file.name.lower().endswith('.docx')\
                             and not file.name.lower().endswith('.doc')\
                             and not file.name.lower().endswith('.txt'):
                         file.name = file.name + '.docx'
-                        print('matched a docx: {0}'.format(file.name))
                     elif file.mime_type == 'application/vnd.google-apps.spreadsheet'\
                             and not file.name.lower().endswith('.xlsx')\
                             and not file.name.lower().endswith('.xls'):
@@ -400,7 +401,7 @@ class Drive(object):
         logger.info("Found <{0}> pages of results for <{1}>. Building Drive...".format(page_no, self.name))
 
 
-class User(object):
+class DriveUser(object):
     """ User representation class
 
     Args:
@@ -421,7 +422,7 @@ class User(object):
         return "<user: {0}>".format(self.email)
 
 
-class File(object):
+class DriveFile(object):
     """ File representation class
 
     Args:
@@ -476,7 +477,7 @@ class File(object):
         self.path = path
 
 
-class Folder(object):
+class DriveFolder(object):
     """ Folder representation class
 
     Args:
