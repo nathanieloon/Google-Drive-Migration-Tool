@@ -17,7 +17,7 @@ QUERY_STRING = 'a b c d e f g h i j k l m n o p q r s t u v w y z '\
 
 
 def _retrieve_all_items(parent_folder):
-    """ Create the internal representation of Box items
+    """ Retrieve from the client all child items of a folder
 
     Args:
         parent_folder (item): the parent for which to get all children
@@ -41,6 +41,15 @@ def _retrieve_all_items(parent_folder):
 
 
 def _map_child_folders(parent_folder, all_folders):
+    """ Sets the parent of each folder which is a child of the given folder
+
+    Calls itself recursively on each subfolder it finds
+
+    Args:
+        parent_folder (BoxObject): Folder for which to find children
+        all_folders ([BoxObject]): List of folders to check against
+    """
+
     for folder in all_folders:
         if folder.parent_id is not None and folder.parent_id == parent_folder.id:
             folder.set_parent(parent_folder)
@@ -48,11 +57,25 @@ def _map_child_folders(parent_folder, all_folders):
 
 
 class Box(object):
-    def __init__(self, path_prefix, root_directory=None, reset_cred=False, debug=False):
+    """ Representation of the entire file hierarchy within Box
+
+    Args:
+        path_prefix (str): The prefix to be added to each path
+        root_directory (str, optional): The path within Box to treat as the root
+        reset_cred (bool, optional): Whether to force a reset of the account credentials
+        logger (logger, optional): Logging file
+
+    Attributes:
+        client (client): Client through which Box's API is interfaced
+        files ([BoxObject]): All files in the Box
+        folders([BoxObject]): All folders in the Box
+        path_prefix (str): The prefix added to each path
+    """
+
+    def __init__(self, path_prefix, root_directory=None, reset_cred=False, logger=None):
         self.client = None
         self.files = []
         self.folders = []
-        self._owner = None
         self.path_prefix = path_prefix
 
         class StoppableWSGIServer(bottle.ServerAdapter):
@@ -127,8 +150,8 @@ class Box(object):
 
         # Setup the root
         root_folder = self._get_root_folder(root_directory)
-        if debug:
-            print('root folder has id: {0}'.format(str(root_folder.object_id)))
+        if logger:
+            logger.debug('root folder has id: {0}'.format(str(root_folder.object_id)))
         root_object = BoxObject(identifier=root_folder.object_id, name=self.path_prefix)
         self.files = []
         self.folders = [root_object]
@@ -141,8 +164,8 @@ class Box(object):
                                                  offset=offset,
                                                  result_type='file')
 
-            if debug:
-                print('retreived files #{0} to #{1}'.format(str(offset + 1), str(offset + len(retrieved_files))))
+            if logger:
+                logger.debug('retreived files #{0} to #{1}'.format(str(offset + 1), str(offset + len(retrieved_files))))
             offset += REQUEST_COUNT
 
             for box_file in retrieved_files:
@@ -162,9 +185,9 @@ class Box(object):
                                                    offset=offset,
                                                    result_type='folder')
 
-            if debug:
-                print('retreived folders #{0} to #{1}'.format(str(offset + 1),
-                                                              str(offset + len(retrieved_folders))))
+            if logger:
+                logger.debug('retreived folders #{0} to #{1}'.format(str(offset + 1),
+                                                                     str(offset + len(retrieved_folders))))
             offset += REQUEST_COUNT
 
             for box_folder in retrieved_folders:
@@ -184,16 +207,22 @@ class Box(object):
                     file.set_parent(folder)
                     break
 
-        if debug:
-            print('Mapped {0} files and {1} folders'.format(str(len(self.files)), str(len(self.folders))))
+        if logger:
+            logger.debug('Mapped {0} files and {1} folders'.format(str(len(self.files)), str(len(self.folders))))
             for folder in self.folders:
                 if folder.path is None:
-                    print("Found an orphaned folder with name {0} and id {1}".format(folder.name, str(folder.id)))
+                    logger.debug("Found an orphaned folder with name {0} and id {1}".format(folder.name,
+                                                                                            str(folder.id)))
             for file in self.files:
                 if file.path is None:
-                    print("Found an orphaned file with name {0} and id {1}".format(file.name, str(file.id)))
+                    logger.debug("Found an orphaned file with name {0} and id {1}".format(file.name, str(file.id)))
 
     def _get_root_folder(self, root_directory):
+        """ Get the box object corresponding to the folder at a given root path
+
+        Args:
+            root_directory (str): The path at which to search. If none is specified, gives the overall root
+        """
         current_folder = self.client.folder('0')
         if root_directory is None:
             return current_folder
@@ -211,6 +240,13 @@ class Box(object):
         return current_folder
 
     def apply_metadata(self, box_file, drive_file):
+        """ Apply the metadata from a Drive file to a matched Box file, based on
+
+        Args:
+            box_file (BoxObject): File to which to apply the metadata
+            drive_file (Drive.File): File from which to get the metadata
+        """
+
         metadata = self.client.file(box_file.id).metadata('enterprise', 'legacyData')
         try:
             if metadata.get() is None:
@@ -225,16 +261,33 @@ class Box(object):
                              'legacyLastModifiedDate': drive_file.last_modified_time})
 
     def print_box(self, base_folder_path=None, output_file=None):
+        """ Print the Box, starting from a specified path
+
+        Args:
+            base_folder_path (str): Path to treat as the root
+            output_file (file, optional): File to which to print the structure
+        """
+
         if base_folder_path is None:
             base_folder_path = self.path_prefix
-        print('Printing drive at root folder ' + base_folder_path)
         for folder in self.folders:
             if folder.path == base_folder_path:
-                print('Found target folder for printing')
                 self._print_folder(folder=folder, output_file=output_file)
                 break
+        else:
+            print("Failed to find a folder at path {0}".format(base_folder_path), file=output_file)
 
     def _print_folder(self, folder, prefix='', output_file=None):
+        """ Print a folder, along with all files and subfolders
+
+        Calls itself recursively on each subfolder it finds
+
+        Args:
+            folder (BoxObject): Folder to print out
+            prefix (str): Padding prefix to format output neatly
+            output_file (file, optional): File to which to print the structure
+        """
+
         print(prefix + (folder.path if folder.path else folder.name), file=output_file)
         prefix = prefix + '  '
         for file in self.files:
@@ -250,27 +303,27 @@ class BoxObject(object):
     """ File representation class
 
     Args:
-        identifier (str): Google Drive ID of the file
+        identifier (str): Box ID of the file
         name (str): Name of the file
-        parent ([str]): List of parent IDs
+        parent_id (str, optional): List of parent IDs
 
     Attributes:
-        id (str): Google Drive ID of the file
+        id (str): ID of the file
         name (str): Name of the file
-        parent ([str]): List of parent IDs
-        path (str): Path to the file within the Drive
-
+        parent_id (str): ID of the parent object
+        parent (BoxObject): Parent object
+        path (str): Path to the file within Box
     """
 
     def __init__(self,
                  identifier,
                  name,
-                 parent=None,
                  parent_id=None):
+
         self.id = identifier
         self.name = name
-        self.parent = parent
         self.parent_id = parent_id
+        self.parent = None
         self.path = None
 
         # Accommodate for Box replacing '/' within file names for imported files
@@ -278,14 +331,18 @@ class BoxObject(object):
             self.name = self.name.replace('002f', '/')
             self.name = self.name.replace(' - Modify', '')
 
-        if self.parent is not None:
-            self.path = self.parent.path + '/' + self.name
-        elif self.parent_id is None:
+        if self.parent_id is None:
             self.path = name
 
     def __repr__(self):
         return "<file: {0}>".format(self.name)
 
     def set_parent(self, parent):
+        """Set the object's parent
+
+        Args:
+            parent (BoxObject): this object's parent
+        """
+
         self.parent = parent
         self.path = (self.parent.path if self.parent.path else self.parent.name) + '/' + self.name

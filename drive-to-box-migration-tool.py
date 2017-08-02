@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """ Google Drive Migration Tool
 
-This script is designed to help users migrate between a source and destination
-Google Drive. The script is designed to be used alongside a cloud transfer
-service such as Multcloud (https://www.multcloud.com/home).
+This script is designed to migrate metadata from Google Drive to Box.
+The script is designed to be used alongside a cloud transfer service
+such as Multcloud (https://www.multcloud.com/home).
 
 """
 

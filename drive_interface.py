@@ -7,7 +7,7 @@ import sys
 import logging
 
 from apiclient import discovery
-from oauth2client import client, tools
+from oauth2client import client, toolss
 from oauth2client.file import Storage
 
 
@@ -38,9 +38,7 @@ def _get_credentials(reset=False, flags=None):
 
 
 class Drive(object):
-    """ Google Drive representation class
-
-    Class for representing a Google Drive. Has children of Folders and Files.
+    """Class for representing a Google Drive. Has children of Folders and Files.
 
     Attributes:
         name    (str)           Name of the Drive
@@ -80,20 +78,12 @@ class Drive(object):
         self._generate_paths()  # This is expensive, optimise if possible
         build_logger.info("Finished generating paths for <{0}>. Drive has been built.".format(self.name))
 
-    @property
-    def owner(self):
-        if not self._owner:
-            response = self.service.about().get(fields="user").execute()
-            self._owner = self.create_or_retrieve_user(user_email=response['user']['emailAddress'],
-                                                       user_name=response['user']['displayName'])
-        return self._owner
-
-    def parse_path(self, path, logger):
+    def _parse_path(self, path, logger):
         """ Parse a given file path, returning an ordered list of path objects
 
         Args:
-            path   (str)    Path to file/folder
-            logger (logger) Object to which to write all logging
+            path (str): Path to file/folder
+            logger (logger): Logging file
 
         Returns:
             [Folder/File]: Ordered list of folders/file objects
@@ -152,17 +142,17 @@ class Drive(object):
         """ Print the drive structure from the given root folder
 
         Args:
-            base_folder_path (str, optional): Base folder path, defaults to the root folder
+            base_folder_path (str): Base folder path
             verbose (bool, optional): Verbose printing on/off, defaults to off
             curr_folder (Folder, optional): Current folder being printed
             prefix (str, optional): Prefix for indenting/formatting the printing
-            logger (logger): Object to which to write all logging
+            logger (logger, optional): Logging file
             output_file (file, optional): File to write the structure to
 
         """
         # If we're looking at the base folder, set it as the current folder
         if not curr_folder:
-            path_objects = self.parse_path(base_folder_path, logger)
+            path_objects = self._parse_path(base_folder_path, logger)
             if not path_objects:
                 # Will already have thrown error message
                 sys.exit()
@@ -212,19 +202,15 @@ class Drive(object):
                                      prefix=prefix,
                                      output_file=output_file)
 
-    def create_or_retrieve_user(self, user_email, user_name):
-        """Get a user by their email if they exist, otherwise add them
-        """
-
-        for user in self.users:
-            if user.email == user_email:
-                return user
-        new_user = DriveUser(user_name, user_email)
-        self.users.add(new_user)
-        return new_user
-
-    def get_file_via_path(self, path, logger):
+    def get_file_via_path(self, path, logger=None):
         """ Get a file via its path
+
+        Args:
+            path (str): Path to the file
+            logger (logger, optional): Logging file
+
+        Returns:
+            File: File at the specified path
         """
         for file in self.files:
             if file.path == path:
@@ -234,26 +220,30 @@ class Drive(object):
             logger.error("Could not find file at <{0}> in <{1}>.".format(path, self.name))
         return None
 
-    def get_folder_via_path(self, path, logger):
-        """ Get a folder via its path
+    def _create_or_retrieve_user(self, user_email, user_name):
+        """Get a user by their email if they exist, otherwise add them
+
+        Args:
+            user_email (str): User's email address
+            user_name (str): User's full name
+
+        Returns:
+            User: User object corresponding to the given email address
         """
-        for folder in self.folders:
-            if folder.path == path:
-                return folder
-            
-        if logger:
-            logger.error("Could not find folder at <{0}> in <{1}>.".format(path, self.name))
-        return None
+
+        for user in self.users:
+            if user.email == user_email:
+                return user
+        new_user = User(user_name, user_email)
+        self.users.add(new_user)
+        return new_user
 
     def _generate_paths(self, curr_item=None, curr_path=None):
         """ Generate all the paths for every file and folder in the drive - expensive
 
-        Builds all the paths for every item in the Drive. Stores them in the
-            path attribute for each item.
-
         Args:
             curr_item (File/Folder, optional): Current item being looked at
-            curr_path (List): Current path to item being looked at
+            curr_path (List, optional): Current path to item being looked at
 
         """
         # Start in root
@@ -271,11 +261,7 @@ class Drive(object):
                 curr_item = path_objects[-1]
 
             if not file.path and curr_item.id in file.parents:
-                # Build the path string
-                path_string = curr_item.path + "/" + file.name
-
-                # Set the file path string
-                file.set_path(path_string)
+                file.path = curr_item.path + "/" + file.name
 
         for folder in self.folders:
             # Reset to the current path
@@ -284,39 +270,36 @@ class Drive(object):
                 curr_item = path_objects[-1]
 
             if not folder.path and curr_item.id in folder.parents:
-                # Build the path string
-                path_string = curr_item.path + "/" + folder.name
-
-                # Set the folder path string
-                folder.set_path(path_string)
-
-                # Generate children
+                folder.path = curr_item.path + "/" + folder.name
                 self._generate_paths(folder, path_objects)
 
-    def _build_drive(self, logger):
+    def _build_drive(self, logger=None):
         """ Build the Google Drive for the given service
 
-        Build the Drive objects from the provided API point.
-
+        Args:
+            logger (logger, optional): Logging file
         """
-        logger.info("Retrieving drive data for <{0}>...".format(self.name))
+
+        if logger:
+            logger.info("Retrieving drive data for <{0}>...".format(self.name))
 
         # Get the root "My Drive" folder first
         response = self.service.files().get(fileId='root',
                                             fields="id, mimeType, name, owners").execute()
         # Set the owner
-        self._owner = self.create_or_retrieve_user(response['owners'][0]['emailAddress'],
-                                                   response['owners'][0]['displayName'])
+        self._owner = self._create_or_retrieve_user(response['owners'][0]['emailAddress'],
+                                                    response['owners'][0]['displayName'])
         # Set the root
-        root_folder = DriveFolder(identifier=response['id'],
-                                  name=response['name'],
-                                  owner=self._owner,
-                                  parents=None,
-                                  last_modified_time=None,
-                                  last_modified_by=None,
-                                  path=self._root_path)
+        root_folder = Folder(identifier=response['id'],
+                             name=response['name'],
+                             owner=self._owner,
+                             parents=None,
+                             last_modified_time=None,
+                             last_modified_by=None,
+                             path=self._root_path)
         self.root = root_folder
-        logger.debug("root_folder: {0}, root_owner: {1} ".format(root_folder, self._owner))
+        if logger:
+            logger.debug("root_folder: {0}, root_owner: {1} ".format(root_folder, self._owner))
 
         page_token = None
         page_no = 1
@@ -341,13 +324,13 @@ class Drive(object):
             # Build folder structure in memory
             for result in results:
                 # Create owner
-                owner = self.create_or_retrieve_user(result['owners'][0]['emailAddress'],
-                                                     result['owners'][0]['displayName'])
+                owner = self._create_or_retrieve_user(result['owners'][0]['emailAddress'],
+                                                      result['owners'][0]['displayName'])
 
                 # Save last modifying user, if it exists
                 if 'lastModifyingUser' in result and 'emailAddress' in result['lastModifyingUser']:
-                    modified_by = self.create_or_retrieve_user(result['owners'][0]['emailAddress'],
-                                                               result['owners'][0]['displayName'])
+                    modified_by = self._create_or_retrieve_user(result['owners'][0]['emailAddress'],
+                                                                result['owners'][0]['displayName'])
                 else:
                     # Set the last modifier to be the file owner if no last modified exists
                     modified_by = owner
@@ -360,24 +343,25 @@ class Drive(object):
 
                 # Create drive item
                 if result['mimeType'] == 'application/vnd.google-apps.folder':
-                    folder = DriveFolder(identifier=result['id'],
-                                         name=result['name'],
-                                         owner=owner,
-                                         parents=parents,
-                                         created_time=result['createdTime'],
-                                         last_modified_time=result['modifiedTime'],
-                                         last_modified_by=modified_by)
+                    folder = Folder(identifier=result['id'],
+                                    name=result['name'],
+                                    owner=owner,
+                                    parents=parents,
+                                    created_time=result['createdTime'],
+                                    last_modified_time=result['modifiedTime'],
+                                    last_modified_by=modified_by)
                     self.folders.add(folder)
-                    logger.debug("folder: {0}, owner: {1}".format(folder, owner))
+                    if logger:
+                        logger.debug("folder: {0}, owner: {1}".format(folder, owner))
                 else:
-                    file = DriveFile(identifier=result['id'],
-                                     name=result['name'],
-                                     owner=owner,
-                                     parents=parents,
-                                     created_time=result['createdTime'],
-                                     last_modified_time=result['modifiedTime'],
-                                     last_modified_by=modified_by,
-                                     mime_type=result['mimeType'])
+                    file = File(identifier=result['id'],
+                                name=result['name'],
+                                owner=owner,
+                                parents=parents,
+                                created_time=result['createdTime'],
+                                last_modified_time=result['modifiedTime'],
+                                last_modified_by=modified_by,
+                                mime_type=result['mimeType'])
                     if file.mime_type == 'application/vnd.google-apps.document'\
                             and not file.name.lower().endswith('.docx')\
                             and not file.name.lower().endswith('.doc')\
@@ -392,18 +376,19 @@ class Drive(object):
                             and not file.name.lower().endswith('.ppt'):
                         file.name = file.name + '.pptx'
                     self.files.add(file)
-                    logger.debug("file: {0}, owner: {1}".format(file, owner))
+                    if logger:
+                        logger.debug("file: {0}, owner: {1}".format(file, owner))
 
             # Look for more pages of results
             page_token = response.get('nextPageToken', None)
             page_no += 1
             if page_token is None:
                 break
+        if logger:
+            logger.info("Found <{0}> pages of results for <{1}>. Building Drive...".format(page_no, self.name))
 
-        logger.info("Found <{0}> pages of results for <{1}>. Building Drive...".format(page_no, self.name))
 
-
-class DriveUser(object):
+class User(object):
     """ User representation class
 
     Args:
@@ -424,7 +409,7 @@ class DriveUser(object):
         return "<user: {0}>".format(self.email)
 
 
-class DriveFile(object):
+class File(object):
     """ File representation class
 
     Args:
@@ -467,19 +452,13 @@ class DriveFile(object):
         self.last_modified_time = last_modified_time
         self.last_modified_by = last_modified_by
         self.mime_type = mime_type
-
         self.path = None
 
     def __repr__(self):
         return "<file: {0}>".format(self.name)
 
-    def set_path(self, path):
-        """ Set the file path string
-        """
-        self.path = path
 
-
-class DriveFolder(object):
+class Folder(object):
     """ Folder representation class
 
     Args:
@@ -525,8 +504,3 @@ class DriveFolder(object):
 
     def __repr__(self):
         return "<folder: {0}>".format(self.name)
-
-    def set_path(self, path):
-        """ Set the folder path string
-        """
-        self.path = path
