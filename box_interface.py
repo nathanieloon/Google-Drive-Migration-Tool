@@ -16,17 +16,17 @@ QUERY_STRING = 'a b c d e f g h i j k l m n o p q r s t u v w y z '\
                + '0 1 2 3 4 5 6 7 8 9'
 
 
-def _create_items(item, parent, file_list):
-    if item.type == 'file':
-        box_file = BoxObject(item.id, item.name, parent)
-        file_list.append(box_file)
-    if item.type == 'folder':
-        box_folder = BoxObject(item.id, item.name, parent)
-        for sub_item in _retrieve_all_items(item):
-            _create_items(sub_item, box_folder, file_list)
-
-
 def _retrieve_all_items(parent_folder):
+    """ Create the internal representation of Box items
+
+    Args:
+        parent_folder (item): the parent for which to get all children
+
+    Returns:
+        [item]: all items in Box which are children of parent_folder
+
+    """
+
     offset = 0
     all_items = None
     while True:
@@ -42,7 +42,7 @@ def _retrieve_all_items(parent_folder):
 
 def _map_child_folders(parent_folder, all_folders):
     for folder in all_folders:
-        if folder.parent_id == parent_folder.id:
+        if folder.parent_id is not None and folder.parent_id == parent_folder.id:
             folder.set_parent(parent_folder)
             _map_child_folders(folder, all_folders)
 
@@ -130,8 +130,8 @@ class Box(object):
         if debug:
             print('root folder has id: {0}'.format(str(root_folder.object_id)))
         root_object = BoxObject(identifier=root_folder.object_id, name=self.path_prefix)
-        raw_files = []
-        raw_folders = [root_object]
+        self.files = []
+        self.folders = [root_object]
 
         # Retrieve all descendant files of the root
         offset = 0
@@ -146,9 +146,9 @@ class Box(object):
             offset += REQUEST_COUNT
 
             for box_file in retrieved_files:
-                raw_files.append(BoxObject(identifier=box_file.id,
-                                           name=box_file.name,
-                                           parent_id=box_file.parent['id'] if box_file.parent else None))
+                self.files.append(BoxObject(identifier=box_file.id,
+                                            name=box_file.name,
+                                            parent_id=box_file.parent['id'] if box_file.parent else None))
 
             if len(retrieved_files) < REQUEST_COUNT:
                 # No more files
@@ -168,30 +168,21 @@ class Box(object):
             offset += REQUEST_COUNT
 
             for box_folder in retrieved_folders:
-                raw_folders.append(BoxObject(identifier=box_folder.id,
-                                             name=box_folder.name,
-                                             parent_id=box_folder.parent['id'] if box_folder.parent else None))
+                self.folders.append(BoxObject(identifier=box_folder.id,
+                                              name=box_folder.name,
+                                              parent_id=box_folder.parent['id'] if box_folder.parent else None))
 
             if len(retrieved_folders) < REQUEST_COUNT:
                 # No more files
                 break
 
         # Map the parents
-        _map_child_folders(root_object, raw_folders)
-        for file in raw_files:
-            for folder in raw_folders:
-                if file.parent_id == folder.id:
+        _map_child_folders(root_object, self.folders)
+        for file in self.files:
+            for folder in self.folders:
+                if file.parent_id is not None and file.parent_id == folder.id:
                     file.set_parent(folder)
                     break
-
-        # omit files marked for deletion TODO: remove this for final migration
-        for file in raw_files:
-            if not (file.path and 'zz. Duplicates to be deleted' in file.path):
-                self.files.append(file)
-
-        for folder in raw_folders:
-            if not (folder.path and 'zz. Duplicates to be deleted' in folder.path):
-                self.folders.append(folder)
 
         if debug:
             print('Mapped {0} files and {1} folders'.format(str(len(self.files)), str(len(self.folders))))
@@ -201,15 +192,6 @@ class Box(object):
             for file in self.files:
                 if file.path is None:
                     print("Found an orphaned file with name {0} and id {1}".format(file.name, str(file.id)))
-
-    @property
-    def owner(self):
-        # TODO: make this return something useful
-        return ''
-
-    def _get_root(self, root_directory):
-        root_box_folder = self._get_root_folder(root_directory)
-        return BoxObject(root_box_folder.id, self.path_prefix, None)
 
     def _get_root_folder(self, root_directory):
         current_folder = self.client.folder('0')
@@ -242,6 +224,27 @@ class Box(object):
                              'legacyLastModifyingUser': drive_file.last_modified_by.name,
                              'legacyLastModifiedDate': drive_file.last_modified_time})
 
+    def print_box(self, base_folder_path=None, output_file=None):
+        if base_folder_path is None:
+            base_folder_path = self.path_prefix
+        print('Printing drive at root folder ' + base_folder_path)
+        for folder in self.folders:
+            if folder.path == base_folder_path:
+                print('Found target folder for printing')
+                self._print_folder(folder=folder, output_file=output_file)
+                break
+
+    def _print_folder(self, folder, prefix='', output_file=None):
+        print(prefix + (folder.path if folder.path else folder.name), file=output_file)
+        prefix = prefix + '  '
+        for file in self.files:
+            if file.parent == folder:
+                print(prefix + (file.path if file.path else file.name), file=output_file)
+
+        for subfolder in self.folders:
+            if subfolder.parent == folder:
+                self._print_folder(folder=subfolder, prefix=prefix, output_file=output_file)
+
 
 class BoxObject(object):
     """ File representation class
@@ -266,12 +269,14 @@ class BoxObject(object):
                  parent_id=None):
         self.id = identifier
         self.name = name
-        if '002f' in self.name:
-            self.name = self.name.replace('002f', '/')
-            self.name = self.name.replace(' - Modify', '')
         self.parent = parent
         self.parent_id = parent_id
         self.path = None
+
+        # Accommodate for Box replacing '/' within file names for imported files
+        if '002f' in self.name:
+            self.name = self.name.replace('002f', '/')
+            self.name = self.name.replace(' - Modify', '')
 
         if self.parent is not None:
             self.path = self.parent.path + '/' + self.name
@@ -283,4 +288,4 @@ class BoxObject(object):
 
     def set_parent(self, parent):
         self.parent = parent
-        self.path = self.parent.path + '/' + self.name
+        self.path = (self.parent.path if self.parent.path else self.parent.name) + '/' + self.name

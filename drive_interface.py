@@ -140,7 +140,7 @@ class Drive(object):
                     # Hope there aren't duplicates
                     break
 
-        if not any(obj.name == path_list[-1] for obj in path_objects) or len(path_objects) == 0:
+        if logger and (not any(obj.name == path_list[-1] for obj in path_objects) or len(path_objects) == 0):
             logger.error("Path <{0}> could not be found. Only found: <{1}>".format(
                 self._root_path + path, path_objects))
             return None
@@ -148,7 +148,7 @@ class Drive(object):
         # Return the path objects
         return path_objects
 
-    def print_drive(self, logger, base_folder_path, verbose=False, curr_folder=None, prefix="", output_file=None):
+    def print_drive(self, base_folder_path, logger=None, verbose=False, curr_folder=None, prefix="", output_file=None):
         """ Print the drive structure from the given root folder
 
         Args:
@@ -189,16 +189,17 @@ class Drive(object):
             print(prefix + curr_folder.name, file=output_file)
 
         # Print file(s)
+        prefix = prefix + "\t"
         for file in self.files:
             if curr_folder.id in file.parents:
                 if verbose:
-                    print(prefix + "\t" + file.name +
+                    print(prefix + file.name +
                           " (" + file.owner.name + ")" +
                           " (" + file.last_modified_time + ")", end='', file=output_file)
                     if file.last_modified_by:
                         print(" (" + file.last_modified_by.email + ")", file=output_file)
                 else:
-                    print(prefix + "\t" + file.path, file=output_file)
+                    print(prefix + file.name, file=output_file)
 
         # Print child folder(s)
         for folder in self.folders:
@@ -208,7 +209,7 @@ class Drive(object):
                                      logger=logger,
                                      base_folder_path=self._root_path,
                                      curr_folder=folder,
-                                     prefix=prefix + "\t",
+                                     prefix=prefix,
                                      output_file=output_file)
 
     def create_or_retrieve_user(self, user_email, user_name):
@@ -326,7 +327,15 @@ class Drive(object):
             response = self.service.files().list(q="trashed = false",
                                                  pageSize=1000,
                                                  pageToken=page_token,
-                                                 fields="nextPageToken, files(id, mimeType, name, owners, parents, modifiedTime, lastModifyingUser, createdTime)").execute()
+                                                 fields="nextPageToken, \
+                                                         files(id, \
+                                                               mimeType, \
+                                                               name, \
+                                                               owners, \
+                                                               parents, \
+                                                               modifiedTime, \
+                                                               lastModifyingUser, \
+                                                               createdTime)").execute()
             results = response.get('files', [])
 
             # Build folder structure in memory
