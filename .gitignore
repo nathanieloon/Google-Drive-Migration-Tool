@@ -1,8 +1,6 @@
-
+client_secret.json
+logs/*
 *.xml
-
-client_secret\.json
-
-logs/
-
-*.log
+*.cfg
+.idea/*
+__pycache__/*
