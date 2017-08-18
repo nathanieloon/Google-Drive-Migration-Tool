@@ -192,6 +192,8 @@ if __name__ == '__main__':
                          drive=src_drive,
                          print_match=args.match,
                          print_miss=args.miss,
+                         print_duplicates=args.duplicates,
                          print_file=output_file)
+
     if output_file:
         output_file.close()
