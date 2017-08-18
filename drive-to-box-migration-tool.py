@@ -62,6 +62,8 @@ def build_arg_parser():
                         help='Print a list of matched files. Must be used with the update option')
     parser.add_argument('-m', '--miss', action='store_true',
                         help='Print a list of files which were not matched. Must be used with the update option')
+    parser.add_argument('-d', '--duplicates', action='store_true',
+                        help='Print a list of detected duplicate files. Must be used with the update option')
     parser.add_argument('-f', '--printtofile', type=str,
                         help='Save any printed information to a file.')
     parser.add_argument('-c', '--credentials', action='store_true',
@@ -69,7 +71,7 @@ def build_arg_parser():
     return parser
 
 
-def migrate_metadata(box, drive, print_match=False, print_miss=False, print_file=None):
+def migrate_metadata(box, drive, print_match=False, print_miss=False, print_duplicates=False, print_file=None):
     """ Move the metadata from Drive to Box
 
     Args:
@@ -77,32 +79,69 @@ def migrate_metadata(box, drive, print_match=False, print_miss=False, print_file
         drive (Drive): The drive object for metadata to be migrated from
         print_match (bool, optional): Whether to print matched files
         print_miss (bool, optional): Whether to print unmatched files
+        print_duplicates (bool, optional): Whether to print any duplicate file paths
         print_file (file, optional): The file to which any logging should be printed
     """
 
     matched_files = []
-    missed_files = []
+    box_missed_files = []
+    drive_missed_files = []
+    duplicate_files = []
+
     for box_file in box.files:
-        drive_file = drive.get_file_via_path(box_file.path, None)
-        if drive_file:
+        box_missed_files.append(box_file.path)
+
+    for drive_file in drive.files:
+        box_file = box.get_file_via_path(drive_file.path, logger=None)
+        if box_file:
+            try:
+                box_missed_files.remove(box_file.path)
+            except ValueError:
+                # Add to the duplicates list if we've already matched a file at this path
+                duplicate_files.append(box_file.path)
+
             matched_files.append(box_file.path)
             box.apply_metadata(box_file, drive_file)
         else:
-            missed_files.append(box_file.path)
-
-    print(('Matched {0} files; missed {1} files.'.format(str(len(matched_files)),
-                                                         str(len(missed_files)))).encode('utf-8'),
-          file=print_file)
+            drive_missed_files.append(box_file.path)
 
     if print_match:
-        matched_files.sort()
-        for file_path in matched_files:
-            print(('\t' + file_path).encode('utf-8'), file=print_file)
+        print_list(list_to_print=matched_files,
+                   header_message='Matched {0} File Paths:'.format(str(len(matched_files))),
+                   print_file=print_file)
 
     if print_miss:
-        missed_files.sort()
-        for file_path in missed_files:
-            print(('\t' + file_path).encode('utf-8'), file=print_file)
+        print_list(list_to_print=drive_missed_files,
+                   header_message='Failed to Match {0} File Paths from Drive:'.format(str(len(drive_missed_files))),
+                   print_file=print_file)
+        print_list(list_to_print=box_missed_files,
+                   header_message='Failed to Match {0} File Paths from Box:'.format(str(len(box_missed_files))),
+                   print_file=print_file)
+
+    if print_duplicates:
+        print_list(list_to_print=duplicate_files,
+                   header_message='Found {0} Duplicate File Paths:'.format(str(len(duplicate_files))),
+                   print_file=print_file)
+
+
+def print_list(list_to_print, header_message=None, footer_message=None, prefix='\t', print_file=None):
+    """ Sort and print out a list of strings, along with optional header and footer messages
+
+    Args:
+        list_to_print ([String]): The list to be printed
+        prefix (String, optional): The prefix to put in front of each item in the list. Default is a tab
+        print_file (file, optional): The file to which any logging should be printed
+        header_message (String, optional): A message to be displayed before the list is printed
+        footer_message (String, optional): A message to be displayed after the list is printed
+    """
+
+    list_to_print.sort()
+    if header_message:
+        print(header_message.encode('utf-8'), file=print_file)
+    for list_item in list_to_print:
+        print((prefix + list_item).encode('utf-8'), file=print_file)
+    if footer_message:
+        print(footer_message.encode('utf-8'), file=print_file)
 
 
 if __name__ == '__main__':
@@ -136,7 +175,7 @@ if __name__ == '__main__':
     elif args.printbox:
         # Map and print the Box
         dest_box = box_interface.Box(path_prefix=PATH_ROOT, root_directory=args.rootbox, reset_cred=args.credentials)
-        dest_box.print_box(base_folder_path=None, output_file=output_file)
+        dest_box.print_box(output_file=output_file)
     elif args.updatedrive:
         update_log = logging.getLogger('update')
 

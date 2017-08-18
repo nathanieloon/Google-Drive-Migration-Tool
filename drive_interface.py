@@ -7,7 +7,7 @@ import sys
 import logging
 
 from apiclient import discovery
-from oauth2client import client, toolss
+from oauth2client import client, tools
 from oauth2client.file import Storage
 
 

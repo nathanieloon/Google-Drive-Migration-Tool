@@ -260,6 +260,24 @@ class Box(object):
                              'legacyLastModifyingUser': drive_file.last_modified_by.name,
                              'legacyLastModifiedDate': drive_file.last_modified_time})
 
+    def get_file_via_path(self, path, logger=None):
+        """ Get a file via its path
+
+        Args:
+            path (str): Path to the file
+            logger (logger, optional): Logging file
+
+        Returns:
+            File: File at the specified path
+        """
+        for file in self.files:
+            if file.path == path:
+                return file
+
+        if logger:
+            logger.error("Could not find file at <{0}> in Box.".format(path))
+        return None
+
     def print_box(self, base_folder_path=None, output_file=None):
         """ Print the Box, starting from a specified path
 
