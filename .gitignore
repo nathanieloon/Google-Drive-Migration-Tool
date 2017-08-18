@@ -1,6 +1,6 @@
 client_secret.json
-logs/*
+logs/
 *.xml
 *.cfg
-.idea/*
-__pycache__/*
+.idea/
+__pycache__/
