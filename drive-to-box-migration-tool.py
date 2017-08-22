@@ -48,22 +48,23 @@ def build_arg_parser():
 
     # Function group
     group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-S', '--setup', action='store_true',
+                       help='Setup connections to Drive and Box')
+    group.add_argument('-s', '--status', action='store_true',
+                       help='Check the status of the connections to Drive and Box')
     group.add_argument('-p', '--printdrive', action='store_true',
                        help='Print the source Drive')
     group.add_argument('-P', '--printbox', action='store_true',
                        help='Print the destination Box')
-    group.add_argument('-u', '--updatedrive', action='store_true',
+    group.add_argument('-u', '--update', action='store_true',
                        help='Update the destination Box using the metadata from the source Drive')
 
     # Verbose printing
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Verbose printing of the drive tree')
-    parser.add_argument('-M', '--match', action='store_true',
-                        help='Print a list of matched files. Must be used with the update option')
-    parser.add_argument('-m', '--miss', action='store_true',
-                        help='Print a list of files which were not matched. Must be used with the update option')
-    parser.add_argument('-d', '--duplicates', action='store_true',
-                        help='Print a list of detected duplicate files. Must be used with the update option')
+    parser.add_argument('-a', '--printall', action='store_true',
+                        help='Print a list of matched files, missed files, and possible duplicates. \
+                              Must be used with the update option')
     parser.add_argument('-f', '--printtofile', type=str,
                         help='Save any printed information to a file.')
     parser.add_argument('-c', '--credentials', action='store_true',
@@ -71,17 +72,18 @@ def build_arg_parser():
     return parser
 
 
-def migrate_metadata(box, drive, print_match=False, print_miss=False, print_duplicates=False, print_file=None):
+def migrate_metadata(box, drive, print_details=False, print_file=None, logger=None):
     """ Move the metadata from Drive to Box
 
     Args:
         box (Box): The box object for metadata to be migrated to
         drive (Drive): The drive object for metadata to be migrated from
-        print_match (bool, optional): Whether to print matched files
-        print_miss (bool, optional): Whether to print unmatched files
-        print_duplicates (bool, optional): Whether to print any duplicate file paths
+        print_details (bool, optional): Whether to print details of matched, missed, and duplicate files
         print_file (file, optional): The file to which any logging should be printed
     """
+
+    if logger:
+        logger.info('Matching files between Drive:/{0} and Box:/{1}'.format(drive.root, box.path))
 
     matched_files = []
     box_missed_files = []
@@ -105,12 +107,11 @@ def migrate_metadata(box, drive, print_match=False, print_miss=False, print_dupl
         else:
             drive_missed_files.append(box_file.path)
 
-    if print_match:
+    if print_details:
         print_list(list_to_print=matched_files,
                    header_message='Matched {0} File Paths:'.format(str(len(matched_files))),
                    print_file=print_file)
 
-    if print_miss:
         print_list(list_to_print=drive_missed_files,
                    header_message='Failed to Match {0} File Paths from Drive:'.format(str(len(drive_missed_files))),
                    print_file=print_file)
@@ -118,7 +119,6 @@ def migrate_metadata(box, drive, print_match=False, print_miss=False, print_dupl
                    header_message='Failed to Match {0} File Paths from Box:'.format(str(len(box_missed_files))),
                    print_file=print_file)
 
-    if print_duplicates:
         print_list(list_to_print=duplicate_files,
                    header_message='Found {0} Duplicate File Paths:'.format(str(len(duplicate_files))),
                    print_file=print_file)
@@ -168,32 +168,58 @@ if __name__ == '__main__':
     if args.printtofile:
         output_file = open(args.printtofile, 'w', encoding='utf-8')
 
-    if args.printdrive:
+    if args.setup:
+        # Setup the connections
+        logging.info("Setting up the connection to Drive...")
+        drive_interface.print_credentials(force_reset=True, logger=logging)
+        logging.info("Setting up the connection to Box...")
+        box_interface.print_credentials(force_reset=True, logger=logging)
+
+    elif args.status:
+        # Check the connections
+        logging.info("Setting up the connection to Drive...")
+        drive_interface.print_credentials(force_reset=False, logger=logging)
+        logging.info("Checking the connection to Box...")
+        box_interface.print_credentials(force_reset=False, logger=logging)
+
+    elif args.printdrive:
         # Map and print the Drive
-        src_drive = drive_interface.Drive(root_path=PATH_ROOT, reset_cred=args.credentials, flags=args)
+        logging.info("Mapping Drive...")
+        src_drive = drive_interface.Drive(path_prefix=PATH_ROOT,
+                                          reset_cred=args.credentials,
+                                          flags=args,
+                                          logger=logging)
+        logging.info("Printing Drive...")
         src_drive.print_drive(base_folder_path=PATH_ROOT, logger=None, verbose=args.verbose, output_file=output_file)
+
     elif args.printbox:
         # Map and print the Box
-        dest_box = box_interface.Box(path_prefix=PATH_ROOT, root_directory=args.rootbox, reset_cred=args.credentials)
+        logging.info("Mapping Box...")
+        dest_box = box_interface.Box(path_prefix=PATH_ROOT,
+                                     root_directory=args.rootbox,
+                                     reset_cred=args.credentials,
+                                     logger=logging)
+        logging.info("Printing Box...")
         dest_box.print_box(output_file=output_file)
-    elif args.updatedrive:
-        update_log = logging.getLogger('update')
 
-        update_log.info("Updating...")
-
+    elif args.update:
         # Source Drive
-        src_drive = drive_interface.Drive(root_path=PATH_ROOT, reset_cred=args.credentials, flags=args)
+        logging.info("Mapping Drive...")
+        src_drive = drive_interface.Drive(path_prefix=PATH_ROOT,
+                                          reset_cred=args.credentials,
+                                          flags=args,
+                                          logger=logging)
 
         # Destination Box
-        dest_box = box_interface.Box(path_prefix=PATH_ROOT, root_directory=args.rootbox, reset_cred=args.credentials)
+        logging.info("Mapping Box...")
+        dest_box = box_interface.Box(path_prefix=PATH_ROOT,
+                                     root_directory=args.rootbox,
+                                     reset_cred=args.credentials,
+                                     logger=logging)
 
         # Update the metadata
-        migrate_metadata(box=dest_box,
-                         drive=src_drive,
-                         print_match=args.match,
-                         print_miss=args.miss,
-                         print_duplicates=args.duplicates,
-                         print_file=output_file)
+        logging.info("Updating...")
+        migrate_metadata(box=dest_box, drive=src_drive, print_details=args.printall, print_file=output_file)
 
     if output_file:
         output_file.close()

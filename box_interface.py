@@ -10,10 +10,112 @@ from boxsdk import Client, OAuth2, exception
 from threading import Thread, Event
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler, make_server
 
+CONFIG_FILE = 'box_app.cfg'
 REQUEST_COUNT = 200
 QUERY_STRING = 'a b c d e f g h i j k l m n o p q r s t u v w y z '\
                + 'A B C D E F G H I J K L M N O P Q R S T U V W X Y Z '\
                + '0 1 2 3 4 5 6 7 8 9'
+
+
+class StoppableWSGIServer(bottle.ServerAdapter):
+    def __init__(self, *args, **kwargs):
+        super(StoppableWSGIServer, self).__init__(*args, **kwargs)
+        self._server = None
+
+    def run(self, app):
+        server_cls = self.options.get('server_class', WSGIServer)
+        handler_cls = self.options.get('handler_class', WSGIRequestHandler)
+        self._server = make_server(self.host, self.port, app, server_cls, handler_cls)
+        self._server.serve_forever()
+
+    def stop(self):
+        self._server.shutdown()
+
+
+def print_credentials(force_reset=False, logger=None):
+    user_email = _authenticate(force_reset, logger).user(user_id='me').get().login
+    if logger:
+        logger.info('Logged into Box with username: {0}'.format(user_email))
+
+
+def _authenticate(force_reset=False, logger=None):
+    # Config setup
+    cfg = configparser.ConfigParser()
+    cfg.read(CONFIG_FILE)
+
+    # Verify if there is a valid token already
+    if 'app_info' in cfg and not force_reset:
+        if logger:
+            logger.info('Using existing credentials')
+        client = Client(OAuth2(
+            client_id=cfg['client_info']['client_id'],
+            client_secret=cfg['client_info']['client_secret'],
+            access_token=cfg['app_info']['access_token'],
+            refresh_token=cfg['app_info']['refresh_token']))
+
+        try:
+            # Make a request to check it's authenticated
+            if logger:
+                logger.info('Testing existing connection')
+            client.user(user_id='me').get()
+        except exception.BoxOAuthException:
+            if logger:
+                logger.info('Resetting connection to Box')
+            return _reset_authentication(cfg=cfg, logger=logger)
+
+        return client
+
+    return _reset_authentication(cfg=cfg, logger=logger)
+
+
+def _reset_authentication(cfg, logger=None):
+    if logger:
+        logger.info('Fetching new credentials')
+    auth_code = {}
+    auth_code_is_available = Event()
+
+    local_oauth_redirect = bottle.Bottle()
+
+    @local_oauth_redirect.get('/')
+    def get_token():
+        auth_code['auth_code'] = bottle.request.query.code
+        auth_code['state'] = bottle.request.query.state
+        auth_code_is_available.set()
+
+    local_server = StoppableWSGIServer(host='localhost', port=8080)
+    server_thread = Thread(target=lambda: local_oauth_redirect.run(server=local_server))
+    server_thread.start()
+
+    oauth = OAuth2(
+        client_id=cfg['client_info']['client_id'],
+        client_secret=cfg['client_info']['client_secret'],
+    )
+    auth_url, csrf_token = oauth.get_authorization_url('http://localhost:8080')
+    webbrowser.open(auth_url)
+
+    auth_code_is_available.wait()
+    local_server.stop()
+    assert auth_code['state'] == csrf_token
+    access_token, refresh_token = oauth.authenticate(auth_code['auth_code'])
+
+    client = Client(oauth)
+
+    try:
+        # Make a request to check it's authenticated
+        client.user(user_id='me').get()
+    except exception.BoxOAuthException as err:
+        if logger:
+            logger.error("Failed to authenticate to Box: {0}".format(err))
+
+    if 'app_info' not in cfg:
+        cfg['app_info'] = {}
+
+    cfg['app_info']['access_token'] = access_token
+    cfg['app_info']['refresh_token'] = refresh_token
+    with open(CONFIG_FILE, 'w') as configfile:
+        cfg.write(configfile)
+
+    return client
 
 
 def _retrieve_all_items(parent_folder):
@@ -77,74 +179,15 @@ class Box(object):
         self.files = []
         self.folders = []
         self.path_prefix = path_prefix
+        self.root_directory = root_directory
 
-        class StoppableWSGIServer(bottle.ServerAdapter):
-            def __init__(self, *args, **kwargs):
-                super(StoppableWSGIServer, self).__init__(*args, **kwargs)
-                self._server = None
+        if logger:
+            logger.info('Connecting to Box.com')
 
-            def run(self, app):
-                server_cls = self.options.get('server_class', WSGIServer)
-                handler_cls = self.options.get('handler_class', WSGIRequestHandler)
-                self._server = make_server(self.host, self.port, app, server_cls, handler_cls)
-                self._server.serve_forever()
+        self.client = _authenticate(reset_cred, logger)
 
-            def stop(self):
-                self._server.shutdown()
-
-        # Config setup
-        cfg = configparser.ConfigParser()
-        cfg.read('fivium_temp.cfg')
-        client_id = cfg['client_info']['client_id']
-        client_secret = cfg['client_info']['client_secret']
-
-        # Verify if there is a valid token already
-        if 'app_info' in cfg and not reset_cred:
-            access_token = cfg.get('app_info', 'access_token')
-            refresh_token = cfg.get('app_info', 'refresh_token')
-
-            self.client = Client(OAuth2(
-                client_id=client_id,
-                client_secret=client_secret,
-                access_token=access_token,
-                refresh_token=refresh_token))
-        else:
-            auth_code = {}
-            auth_code_is_available = Event()
-
-            local_oauth_redirect = bottle.Bottle()
-
-            @local_oauth_redirect.get('/')
-            def get_token():
-                auth_code['auth_code'] = bottle.request.query.code
-                auth_code['state'] = bottle.request.query.state
-                auth_code_is_available.set()
-
-            local_server = StoppableWSGIServer(host='localhost', port=8080)
-            server_thread = Thread(target=lambda: local_oauth_redirect.run(server=local_server))
-            server_thread.start()
-
-            oauth = OAuth2(
-                client_id=client_id,
-                client_secret=client_secret,
-            )
-            auth_url, csrf_token = oauth.get_authorization_url('http://localhost:8080')
-            webbrowser.open(auth_url)
-
-            auth_code_is_available.wait()
-            local_server.stop()
-            assert auth_code['state'] == csrf_token
-            access_token, refresh_token = oauth.authenticate(auth_code['auth_code'])
-
-            if 'app_info' not in cfg:
-                cfg['app_info'] = {}
-
-            cfg['app_info']['access_token'] = access_token
-            cfg['app_info']['refresh_token'] = refresh_token
-            with open('fivium_temp.cfg', 'w') as configfile:
-                cfg.write(configfile)
-
-            self.client = Client(oauth)
+        if logger:
+            logger.info('Connection successful. Mapping Box.')
 
         # Build the Box:
 
@@ -217,6 +260,9 @@ class Box(object):
                 if file.path is None:
                     logger.debug("Found an orphaned file with name {0} and id {1}".format(file.name, str(file.id)))
 
+        if logger:
+            logger.info('Mapping complete.')
+
     def _get_root_folder(self, root_directory):
         """ Get the box object corresponding to the folder at a given root path
 
@@ -226,6 +272,8 @@ class Box(object):
         current_folder = self.client.folder('0')
         if root_directory is None:
             return current_folder
+        if root_directory.startswith(self.path_prefix):
+            root_directory = root_directory.replace(self.path_prefix + '/', '')
         paths = root_directory.split('/')
         for path_item in paths:
             box_items = _retrieve_all_items(current_folder)

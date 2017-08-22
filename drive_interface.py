@@ -4,14 +4,24 @@ from __future__ import print_function
 import httplib2
 import os
 import sys
-import logging
 
 from apiclient import discovery
 from oauth2client import client, tools
 from oauth2client.file import Storage
 
+CLIENT_KEY_FILE = 'client_secret.json'
 
-def _get_credentials(reset=False, flags=None):
+
+def print_credentials(force_reset=False, logger=None):
+    credentials = _get_credentials(reset=force_reset, logger=logger)
+    http = credentials.authorize(httplib2.Http())
+    service = discovery.build('drive', 'v3', http=http)
+    about = service.about().get(fields="user").execute()
+    if logger:
+        logger.info('Logged into Drive with username: {0}'.format(about['user']['emailAddress']))
+
+
+def _get_credentials(reset=False, flags=None, logger=None):
     """Gets valid user credentials from storage.
 
     If nothing has been stored, or if the stored credentials are invalid,
@@ -29,11 +39,11 @@ def _get_credentials(reset=False, flags=None):
     store = Storage(credential_path)
     credentials = store.get()
     if not credentials or credentials.invalid or reset:
-        flow = client.flow_from_clientsecrets('client_secret.json',
+        flow = client.flow_from_clientsecrets(CLIENT_KEY_FILE,
                                               'https://www.googleapis.com/auth/drive')
         flow.user_agent = 'Drive Migration Tool'
         credentials = tools.run_flow(flow, store, flags)
-        logging.info('Storing credentials to ' + credential_path)
+        logger.info('Storing credentials to ' + credential_path)
     return credentials
 
 
@@ -58,25 +68,24 @@ class Drive(object):
 
     """
 
-    def __init__(self, root_path, reset_cred=True, flags=None):
+    def __init__(self, path_prefix, root_path=None, reset_cred=True, flags=None, logger=None):
         self.name = 'Source'
         self.folders = set()
         self.root = None
         self._owner = None
         self.files = set()
         self.users = set()
-        self._root_path = root_path
+        self._path_prefix = path_prefix
 
-        self._credentials = _get_credentials(reset=reset_cred, flags=flags)
+        self._credentials = _get_credentials(reset=reset_cred, flags=flags, logger=logger)
         http = self._credentials.authorize(httplib2.Http())
         self.service = discovery.build('drive', 'v3', http=http)
 
         # Initialise the drive
-        build_logger = logging.getLogger('build-drive')
-        self._build_drive(build_logger)
-        build_logger.debug("Generating paths for <{0}>.".format(self.name))
+        self._build_drive(logger)
+        logger.debug("Generating paths for <{0}>.".format(self.name))
         self._generate_paths()  # This is expensive, optimise if possible
-        build_logger.info("Finished generating paths for <{0}>. Drive has been built.".format(self.name))
+        logger.info("Finished generating paths for <{0}>. Drive has been built.".format(self.name))
 
     def _parse_path(self, path, logger):
         """ Parse a given file path, returning an ordered list of path objects
@@ -89,16 +98,16 @@ class Drive(object):
             [Folder/File]: Ordered list of folders/file objects
 
         """
-        if self._root_path not in path:
+        if self._path_prefix not in path:
             logger.error("Invalid path <{0}>.".format(path))
             return None
 
-        if path == self._root_path:
+        if path == self._path_prefix:
             # We're looking at root
             return [self.root]
 
         # Strip out the prefix
-        path = path.replace(self._root_path, '')
+        path = path.replace(self._path_prefix, '')
         path_list = path.split('/')
 
         # Build the list of path objects
@@ -132,7 +141,7 @@ class Drive(object):
 
         if logger and (not any(obj.name == path_list[-1] for obj in path_objects) or len(path_objects) == 0):
             logger.error("Path <{0}> could not be found. Only found: <{1}>".format(
-                self._root_path + path, path_objects))
+                self._path_prefix + path, path_objects))
             return None
 
         # Return the path objects
@@ -197,7 +206,7 @@ class Drive(object):
                 if curr_folder.id in folder.parents:
                     self.print_drive(verbose=verbose,
                                      logger=logger,
-                                     base_folder_path=self._root_path,
+                                     base_folder_path=self._path_prefix,
                                      curr_folder=folder,
                                      prefix=prefix,
                                      output_file=output_file)
@@ -290,16 +299,15 @@ class Drive(object):
         self._owner = self._create_or_retrieve_user(response['owners'][0]['emailAddress'],
                                                     response['owners'][0]['displayName'])
         # Set the root
-        root_folder = Folder(identifier=response['id'],
-                             name=response['name'],
-                             owner=self._owner,
-                             parents=None,
-                             last_modified_time=None,
-                             last_modified_by=None,
-                             path=self._root_path)
-        self.root = root_folder
+        self.root = Folder(identifier=response['id'],
+                           name=response['name'],
+                           owner=self._owner,
+                           parents=None,
+                           last_modified_time=None,
+                           last_modified_by=None,
+                           path=self._path_prefix)
         if logger:
-            logger.debug("root_folder: {0}, root_owner: {1} ".format(root_folder, self._owner))
+            logger.debug("root_folder: {0}, root_owner: {1} ".format(self.root, self._owner))
 
         page_token = None
         page_no = 1

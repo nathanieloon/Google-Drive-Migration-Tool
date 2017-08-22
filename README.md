@@ -1,20 +1,23 @@
 # Google Drive Migration Tool (GDMT)
 
-This script was developed to help users migrate between a source and destination
-Google Drive. The script is designed to be used alongside a cloud transfer
+This script was developed to help users migrate from Google Drive to Box.
+The script is designed to be used alongside a cloud transfer
 service such as [Multcloud](https://www.multcloud.com/home).
 
 The script takes a source and destination Drive, and clones the:
+* Created Date
 * Last Modified Date
+* Last Modifying User
 * Owner
-* Permissions
-* Activity History (TODO)
 
-from the source to destination Drive.
+from Drive to Box, storing them as custom metadata.
 
 ## Installation
-Instructions on the authentication setup for the Drive API can be found 
+Instructions on the authentication setup for the Drive API can be found
 [here](https://developers.google.com/drive/v3/web/quickstart/python).
+
+Instructions for the Box API can be found
+[here](http://opensource.box.com/box-python-sdk/).
 
 This project was built for Python3, so you'll run into unicode errors in Python2.
 
@@ -22,45 +25,52 @@ Requirements can be installed with the command:
 ` pip install -r requirements.txt `
 
 ## Setup
-To setup the tool first run `python3 drive-migration-tool.py -S`. The script will prompt you to login twice, the first login is the source drive, and the second is the destination drive. The script will then output the user/email of the accounts associated with the tool. You can use `python3 drive-migration-tool.py -s` to check the status of the tool.
+To setup the tool first run `python3 drive-migration-tool.py -S`.
+The script will prompt you to login twice, the first login is
+Google Drive, and the second is Box. The script will then output
+the user/email of the accounts associated with the tool.
+
+You can use `python3 drive-migration-tool.py -s`
+to check the status of the tool.
 
 ## Usage
 ``` 
-usage: drive-migration-tool.py [-h] [-r ROOT] [-f PREFIX] [-l LOG_LEVEL]
-                               (-p | -P | -u | -s | -S) [-v] [-F PRINTTOFILE]
-                               [-x GENERATE_XML] [-uo] [-d NEWDOMAIN] [-up]
+usage: drive-to-box-migration-tool.py [-h] [-r ROOTDRIVE] [-R ROOTBOX]
+                                      [-l LOG_LEVEL] (-S | -s | -p | -P | -u)
+                                      [-v] [-a] [-f PRINTTOFILE] [-c]
 
 Google Drive Migration Tool.
 
 optional arguments:
   -h, --help            show this help message and exit
-  -r ROOT, --root ROOT  Path to folder to start in (eg "D:/test"). Defaults to
-                        root Drive directory
-  -f PREFIX, --prefix PREFIX
-                        Prefix letter for the drive (eg "D")
+  -r ROOTDRIVE, --rootdrive ROOTDRIVE
+                        Path to folder within Drive to start in (e.g.
+                        "folder/subfolder")
+  -R ROOTBOX, --rootbox ROOTBOX
+                        Path to folder within Box to start in (e.g.
+                        "folder/subfolder")
   -l LOG_LEVEL, --log-level LOG_LEVEL
                         Logging level for output
-  -p, --printsrc        Print the source Drive
-  -P, --printdest       Print the destination Drive
-  -u, --updatedrive     Update the destination Drive using the meta data from
-                        the source Drive
-  -s, --status          Display the current logins for the Drives
-  -S, --setup           Setup the logins for the Drives
-  -v, --verbose         Verbose printing of the tree
-  -F PRINTTOFILE, --printtofile PRINTTOFILE
-                        Save the tree to a file instead of stdout. Must be
-                        used with one of the print Drive options.
-  -x GENERATE_XML, --generate-xml GENERATE_XML
-                        Output the tree to an XML file. Must be used with one
-                        of the print Drive options.
-  -uo, --updateowner    Flag for updating the owner to the new domain
-  -d NEWDOMAIN, --newdomain NEWDOMAIN
-                        Destination domain (eg "test.com")
-  -up, --updateperm     Flag for updating the permissions for the file to the
-                        new domain
+  -S, --setup           Setup connections to Drive and Box
+  -s, --status          Check the status of the connections to Drive and Box
+  -p, --printdrive      Print the source Drive
+  -P, --printbox        Print the destination Box
+  -u, --update          Update the destination Box using the metadata from the
+                        source Drive
+  -v, --verbose         Verbose printing of the drive tree
+  -a, --printall        Print a list of matched files, missed files, and
+                        possible duplicates. Must be used with the update
+                        option
+  -f PRINTTOFILE, --printtofile PRINTTOFILE
+                        Save any printed information to a file.
+  -c, --credentials     Force a reset of the drive/box web credentials
+
+
 ```
 
 ## Notes
-* The source and destination drives must have identical hierarchies for this script to work.
-* If there are duplicate files (ie same name, same path) then only one of the files will be updated.
-* The same users must exist in the destination directory (eg `john.smith` must exist in both `@source.com`, and `@dest.com`). If a user does not exist in the destination drive then the update will skip any permission or ownership association with that user.
+* The source and destination drives must have identical hierarchies from
+the specified subfolder onward for this script to work.
+* If there are duplicate files (ie same name, same path) then only one
+of the files will be updated. use the --printall option to see a list
+of any duplicates that the migration detects
