@@ -83,7 +83,7 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
     """
 
     if logger:
-        logger.info('Matching files between Drive:/{0} and Box:/{1}'.format(drive.root, box.path))
+        logger.debug('Matching files between Drive:/{0} and Box:/{1}'.format(drive.root, box.path))
 
     matched_files = []
     box_missed_files = []
@@ -91,21 +91,28 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
     duplicate_files = []
 
     for box_file in box.files:
-        box_missed_files.append(box_file.path)
+        if box_file.path:
+            box_missed_files.append(box_file.path)
 
     for drive_file in drive.files:
         box_file = box.get_file_via_path(drive_file.path, logger=None)
         if box_file:
+            matched_files.append(drive_file.path)
+            box.apply_metadata(box_file, drive_file)
+            if logger:
+                logger.debug('Applied metadata at {0}'.format(drive_file.path))
             try:
                 box_missed_files.remove(box_file.path)
             except ValueError:
                 # Add to the duplicates list if we've already matched a file at this path
                 duplicate_files.append(box_file.path)
+                if logger:
+                    logger.debug('Found a duplicate at {0}'.format(drive_file.path))
 
-            matched_files.append(box_file.path)
-            box.apply_metadata(box_file, drive_file)
         else:
             drive_missed_files.append(drive_file.path)
+            if logger:
+                logger.debug('Failed to match file at {0}'.format(drive_file.path))
 
     if print_details:
         print_list(list_to_print=matched_files,
@@ -139,7 +146,8 @@ def print_list(list_to_print, header_message=None, footer_message=None, prefix='
     if header_message:
         print(header_message.encode('utf-8'), file=print_file)
     for list_item in list_to_print:
-        print((prefix + list_item).encode('utf-8'), file=print_file)
+        if list_item:
+            print((prefix + list_item).encode('utf-8'), file=print_file)
     if footer_message:
         print(footer_message.encode('utf-8'), file=print_file)
 
@@ -152,12 +160,14 @@ if __name__ == '__main__':
     timestr = time.strftime("%Y%m%d-%H%M%S")
     if not os.path.exists('logs'):
         os.makedirs('logs')
-    logging.basicConfig(filename='logs/'+timestr+'.log', level=args.log_level)
+    logging.basicConfig(filename='logs/'+timestr+'.log', level=logging.DEBUG)
     # Suppress all the google error messages
     logging.getLogger('googleapiclient').setLevel(logging.CRITICAL)
     logging.getLogger('oauth2client.transport').setLevel(logging.CRITICAL)
     logging.getLogger('oauth2client.client').setLevel(logging.CRITICAL)
-    logging.getLogger().addHandler(logging.StreamHandler())
+    handler = logging.StreamHandler()
+    handler.setLevel(args.log_level)
+    logging.getLogger().addHandler(handler)
 
     # Log args
     logging.info('Starting Google Drive Migration Tool')
