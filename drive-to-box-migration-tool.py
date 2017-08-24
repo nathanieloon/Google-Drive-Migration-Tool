@@ -95,24 +95,25 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
             box_missed_files.append(box_file.path)
 
     for drive_file in drive.files:
-        box_file = box.get_file_via_path(drive_file.path, logger=None)
-        if box_file:
-            matched_files.append(drive_file.path)
-            box.apply_metadata(box_file, drive_file)
-            if logger:
-                logger.debug('Applied metadata at {0}'.format(drive_file.path))
-            try:
-                box_missed_files.remove(box_file.path)
-            except ValueError:
-                # Add to the duplicates list if we've already matched a file at this path
-                duplicate_files.append(box_file.path)
+        if drive_file.path:
+            box_file = box.get_file_via_path(drive_file.path, logger=None)
+            if box_file:
+                matched_files.append(drive_file.path)
+                box.apply_metadata(box_file, drive_file)
                 if logger:
-                    logger.debug('Found a duplicate at {0}'.format(drive_file.path))
+                    logger.debug('Applied metadata at {0}'.format(drive_file.path))
+                try:
+                    box_missed_files.remove(box_file.path)
+                except ValueError:
+                    # Add to the duplicates list if we've already matched a file at this path
+                    duplicate_files.append(box_file.path)
+                    if logger:
+                        logger.debug('Found a duplicate at {0}'.format(drive_file.path))
 
-        else:
-            drive_missed_files.append(drive_file.path)
-            if logger:
-                logger.debug('Failed to match file at {0}'.format(drive_file.path))
+            else:
+                drive_missed_files.append(drive_file.path)
+                if logger:
+                    logger.debug('Failed to match file at {0}'.format(drive_file.path))
 
     if print_details:
         print_list(list_to_print=matched_files,
