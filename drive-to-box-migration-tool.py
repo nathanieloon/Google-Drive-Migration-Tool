@@ -83,7 +83,7 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
     """
 
     if logger:
-        logger.info('Matching files between Drive:/{0} and Box:/{1}'.format(drive.root, box.path))
+        logger.debug('Matching files between Drive:/{0} and Box:/{1}'.format(drive.root, box.path))
 
     matched_files = []
     box_missed_files = []
@@ -91,22 +91,23 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
     duplicate_files = []
 
     for box_file in box.files:
-        box_missed_files.append(box_file.path)
+        if box_file.path:
+            box_missed_files.append(box_file.path)
 
     for drive_file in drive.files:
         box_file = box.get_file_via_path(drive_file.path, logger=None)
         if box_file:
-            matched_files.append(box_file.path)
+            matched_files.append(drive_file.path)
             box.apply_metadata(box_file, drive_file)
             if logger:
-                logger.info('Applied metadata at {0}'.format(drive_file.path))
+                logger.debug('Applied metadata at {0}'.format(drive_file.path))
             try:
                 box_missed_files.remove(box_file.path)
             except ValueError:
                 # Add to the duplicates list if we've already matched a file at this path
                 duplicate_files.append(box_file.path)
                 if logger:
-                    logger.info('Found a duplicate at {0}'.format(drive_file.path))
+                    logger.debug('Found a duplicate at {0}'.format(drive_file.path))
 
         else:
             drive_missed_files.append(drive_file.path)
@@ -145,7 +146,8 @@ def print_list(list_to_print, header_message=None, footer_message=None, prefix='
     if header_message:
         print(header_message.encode('utf-8'), file=print_file)
     for list_item in list_to_print:
-        print((prefix + list_item).encode('utf-8'), file=print_file)
+        if list_item:
+            print((prefix + list_item).encode('utf-8'), file=print_file)
     if footer_message:
         print(footer_message.encode('utf-8'), file=print_file)
 
@@ -158,12 +160,14 @@ if __name__ == '__main__':
     timestr = time.strftime("%Y%m%d-%H%M%S")
     if not os.path.exists('logs'):
         os.makedirs('logs')
-    logging.basicConfig(filename='logs/'+timestr+'.log', level=args.log_level)
+    logging.basicConfig(filename='logs/'+timestr+'.log', level=logging.DEBUG)
     # Suppress all the google error messages
     logging.getLogger('googleapiclient').setLevel(logging.CRITICAL)
     logging.getLogger('oauth2client.transport').setLevel(logging.CRITICAL)
     logging.getLogger('oauth2client.client').setLevel(logging.CRITICAL)
-    logging.getLogger().addHandler(logging.StreamHandler())
+    handler = logging.StreamHandler()
+    handler.setLevel(args.log_level)
+    logging.getLogger().addHandler(handler)
 
     # Log args
     logging.info('Starting Google Drive Migration Tool')
@@ -176,55 +180,55 @@ if __name__ == '__main__':
 
     if args.setup:
         # Setup the connections
-        logging.info("Setting up the connection to Drive...")
+        logging.debug("Setting up the connection to Drive...")
         drive_interface.print_credentials(force_reset=True, logger=logging)
-        logging.info("Setting up the connection to Box...")
+        logging.debug("Setting up the connection to Box...")
         box_interface.print_credentials(force_reset=True, logger=logging)
 
     elif args.status:
         # Check the connections
-        logging.info("Setting up the connection to Drive...")
+        logging.debug("Setting up the connection to Drive...")
         drive_interface.print_credentials(force_reset=False, logger=logging)
-        logging.info("Checking the connection to Box...")
+        logging.debug("Checking the connection to Box...")
         box_interface.print_credentials(force_reset=False, logger=logging)
 
     elif args.printdrive:
         # Map and print the Drive
-        logging.info("Mapping Drive...")
+        logging.debug("Mapping Drive...")
         src_drive = drive_interface.Drive(path_prefix=PATH_ROOT,
                                           reset_cred=args.credentials,
                                           flags=args,
                                           logger=logging)
-        logging.info("Printing Drive...")
+        logging.debug("Printing Drive...")
         src_drive.print_drive(base_folder_path=PATH_ROOT, logger=None, verbose=args.verbose, output_file=output_file)
 
     elif args.printbox:
         # Map and print the Box
-        logging.info("Mapping Box...")
+        logging.debug("Mapping Box...")
         dest_box = box_interface.Box(path_prefix=PATH_ROOT,
                                      root_directory=args.rootbox,
                                      reset_cred=args.credentials,
                                      logger=logging)
-        logging.info("Printing Box...")
+        logging.debug("Printing Box...")
         dest_box.print_box(output_file=output_file)
 
     elif args.update:
         # Source Drive
-        logging.info("Mapping Drive...")
+        logging.debug("Mapping Drive...")
         src_drive = drive_interface.Drive(path_prefix=PATH_ROOT,
                                           reset_cred=args.credentials,
                                           flags=args,
                                           logger=logging)
 
         # Destination Box
-        logging.info("Mapping Box...")
+        logging.debug("Mapping Box...")
         dest_box = box_interface.Box(path_prefix=PATH_ROOT,
                                      root_directory=args.rootbox,
                                      reset_cred=args.credentials,
                                      logger=logging)
 
         # Update the metadata
-        logging.info("Updating...")
+        logging.debug("Updating...")
         migrate_metadata(box=dest_box, drive=src_drive, print_details=args.printall, print_file=output_file)
 
     if output_file:
