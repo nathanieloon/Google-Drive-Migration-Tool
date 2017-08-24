@@ -160,7 +160,7 @@ if __name__ == '__main__':
     timestr = time.strftime("%Y%m%d-%H%M%S")
     if not os.path.exists('logs'):
         os.makedirs('logs')
-    logging.basicConfig(filename='logs/'+timestr+'.log', level=logging.DEBUG)
+    logging.basicConfig(handlers=[logging.FileHandler('logs/'+timestr+'.log', 'w', 'utf-8')], level=logging.DEBUG)
     # Suppress all the google error messages
     logging.getLogger('googleapiclient').setLevel(logging.CRITICAL)
     logging.getLogger('oauth2client.transport').setLevel(logging.CRITICAL)
