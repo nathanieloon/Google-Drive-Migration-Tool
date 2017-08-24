@@ -105,7 +105,7 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
             matched_files.append(box_file.path)
             box.apply_metadata(box_file, drive_file)
         else:
-            drive_missed_files.append(box_file.path)
+            drive_missed_files.append(drive_file.path)
 
     if print_details:
         print_list(list_to_print=matched_files,
