@@ -180,55 +180,55 @@ if __name__ == '__main__':
 
     if args.setup:
         # Setup the connections
-        logging.debug("Setting up the connection to Drive...")
+        logging.info("Setting up the connection to Drive...")
         drive_interface.print_credentials(force_reset=True, logger=logging)
-        logging.debug("Setting up the connection to Box...")
+        logging.info("Setting up the connection to Box...")
         box_interface.print_credentials(force_reset=True, logger=logging)
 
     elif args.status:
         # Check the connections
-        logging.debug("Setting up the connection to Drive...")
+        logging.info("Setting up the connection to Drive...")
         drive_interface.print_credentials(force_reset=False, logger=logging)
-        logging.debug("Checking the connection to Box...")
+        logging.info("Checking the connection to Box...")
         box_interface.print_credentials(force_reset=False, logger=logging)
 
     elif args.printdrive:
         # Map and print the Drive
-        logging.debug("Mapping Drive...")
+        logging.info("Mapping Drive...")
         src_drive = drive_interface.Drive(path_prefix=PATH_ROOT,
                                           reset_cred=args.credentials,
                                           flags=args,
                                           logger=logging)
-        logging.debug("Printing Drive...")
+        logging.info("Printing Drive...")
         src_drive.print_drive(base_folder_path=PATH_ROOT, logger=None, verbose=args.verbose, output_file=output_file)
 
     elif args.printbox:
         # Map and print the Box
-        logging.debug("Mapping Box...")
+        logging.info("Mapping Box...")
         dest_box = box_interface.Box(path_prefix=PATH_ROOT,
                                      root_directory=args.rootbox,
                                      reset_cred=args.credentials,
                                      logger=logging)
-        logging.debug("Printing Box...")
+        logging.info("Printing Box...")
         dest_box.print_box(output_file=output_file)
 
     elif args.update:
         # Source Drive
-        logging.debug("Mapping Drive...")
+        logging.info("Mapping Drive...")
         src_drive = drive_interface.Drive(path_prefix=PATH_ROOT,
                                           reset_cred=args.credentials,
                                           flags=args,
                                           logger=logging)
 
         # Destination Box
-        logging.debug("Mapping Box...")
+        logging.info("Mapping Box...")
         dest_box = box_interface.Box(path_prefix=PATH_ROOT,
                                      root_directory=args.rootbox,
                                      reset_cred=args.credentials,
                                      logger=logging)
 
         # Update the metadata
-        logging.debug("Updating...")
+        logging.info("Updating...")
         migrate_metadata(box=dest_box, drive=src_drive, print_details=args.printall, print_file=output_file)
 
     if output_file:
