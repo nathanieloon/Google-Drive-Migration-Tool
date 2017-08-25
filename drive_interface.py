@@ -76,6 +76,7 @@ class Drive(object):
         self.files = set()
         self.users = set()
         self._path_prefix = path_prefix
+        self._root_path = root_path
 
         self._credentials = _get_credentials(reset=reset_cred, flags=flags, logger=logger)
         http = self._credentials.authorize(httplib2.Http())
@@ -299,13 +300,14 @@ class Drive(object):
         self._owner = self._create_or_retrieve_user(response['owners'][0]['emailAddress'],
                                                     response['owners'][0]['displayName'])
         # Set the root
+        base_path = self._path_prefix + '/' + self._root_path
         self.root = Folder(identifier=response['id'],
                            name=response['name'],
                            owner=self._owner,
                            parents=None,
                            last_modified_time=None,
                            last_modified_by=None,
-                           path=self._path_prefix)
+                           path=base_path)
         if logger:
             logger.debug("root_folder: {0}, root_owner: {1} ".format(self.root, self._owner))
 

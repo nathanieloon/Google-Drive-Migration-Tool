@@ -197,6 +197,7 @@ if __name__ == '__main__':
         # Map and print the Drive
         logging.info("Mapping Drive...")
         src_drive = drive_interface.Drive(path_prefix=PATH_ROOT,
+                                          root_path=args.rootdrive,
                                           reset_cred=args.credentials,
                                           flags=args,
                                           logger=logging)
@@ -217,6 +218,7 @@ if __name__ == '__main__':
         # Source Drive
         logging.info("Mapping Drive...")
         src_drive = drive_interface.Drive(path_prefix=PATH_ROOT,
+                                          root_path=args.rootdrive,
                                           reset_cred=args.credentials,
                                           flags=args,
                                           logger=logging)
