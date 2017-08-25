@@ -220,7 +220,7 @@ class Box(object):
                     current_folder = box_item
                     break
             if not found_path:
-                raise FileNotFoundError('Couldn\'t find the root folder <{0}> in box'.format(root_directory))
+                raise FileNotFoundError('Couldn\'t find the root folder <{0}> in Box'.format(root_directory))
         return current_folder
 
     def _build_child_items(self, parent_folder):

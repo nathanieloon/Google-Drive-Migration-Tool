@@ -202,7 +202,7 @@ if __name__ == '__main__':
                                           flags=args,
                                           logger=logging)
         logging.info("Printing Drive...")
-        src_drive.print_drive(base_folder_path=PATH_ROOT, logger=None, verbose=args.verbose, output_file=output_file)
+        src_drive.print_drive(output_file=output_file)
 
     elif args.printbox:
         # Map and print the Box
