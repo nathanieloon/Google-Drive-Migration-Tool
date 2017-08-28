@@ -83,9 +83,10 @@ class Drive(object):
 
         # Initialise the drive
         raw_files, raw_folders = self._get_all_files(logger)
-        root_folder = self._create_root(self._root_path, raw_folders)
+
+        self.root = self._create_root(self._root_path, raw_folders)
         logger.debug("Generating paths for <{0}>.".format(self.name))
-        self._create_child_folders(root_folder, raw_folders)
+        self._create_child_folders(self.root, raw_folders)
         self._create_files(raw_files)
         logger.info("Finished generating paths for <{0}>. Drive has been built.".format(self.name))
 
@@ -279,6 +280,10 @@ class Drive(object):
         if logger:
             logger.info("Found <{0}> pages of results for <{1}>. Building Drive...".format(page_no, self.name))
 
+        for raw_folder in raw_folders:
+            if 'parents' not in raw_folder:
+                raw_folder['parents'] = raw_folders[0]['id']
+
         return raw_files, raw_folders
 
     def _create_root(self, root_directory, raw_folders):
@@ -322,15 +327,9 @@ class Drive(object):
         return root_folder
 
     def _create_child_folders(self, parent_folder, all_folders):
-        # TODO: fold this functionality into this function
-#        # Check if it's a root folder
-#        if 'parents' in result:
-#            parents = result['parents']
-#        else:
-#            parents = [self.root.id]
-
         for raw_folder in all_folders:
-            if 'parents' in raw_folder and parent_folder.id in raw_folder['parents']:
+
+            if parent_folder.id in raw_folder['parents'] and parent_folder.id != raw_folder['id']:
                 owner = self._create_or_retrieve_user(raw_folder['owners'][0]['displayName'],
                                                       raw_folder['owners'][0]['emailAddress'])
                 if 'lastModifyingUser' in raw_folder:
@@ -385,14 +384,14 @@ class Drive(object):
                         modified_time = raw_file['modifiedTime'] if 'modifiedTime' in raw_file else created_time
 
                         new_file = File(identifier=raw_file['id'],
-                                        name=filename,
                                         owner=owner,
+                                        name=filename,
                                         parent=folder,
                                         created_time=created_time,
                                         last_modified_time=modified_time,
                                         last_modified_by=last_modifier,
                                         mime_type=raw_file['mimeType'])
-                        self.folders.append(new_file)
+                        self.files.append(new_file)
 
 
 class User(object):

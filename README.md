@@ -36,8 +36,9 @@ to check the status of the tool.
 ## Usage
 ``` 
 usage: drive-to-box-migration-tool.py [-h] [-r ROOTDRIVE] [-R ROOTBOX]
-                                      [-l LOG_LEVEL] (-S | -s | -p | -P | -u)
-                                      [-v] [-a] [-f PRINTTOFILE] [-c]
+                                      [-l LOG_LEVEL]
+                                      (-S | -s | -p | -P | -u | -t) [-v] [-a]
+                                      [-f PRINTTOFILE] [-c]
 
 Google Drive Migration Tool.
 
@@ -57,6 +58,7 @@ optional arguments:
   -P, --printbox        Print the destination Box
   -u, --update          Update the destination Box using the metadata from the
                         source Drive
+  -t, --testmigrate     Test the migration only - don't write any metadata
   -v, --verbose         Verbose printing of the drive tree
   -a, --printall        Print a list of matched files, missed files, and
                         possible duplicates. Must be used with the update

@@ -58,6 +58,8 @@ def build_arg_parser():
                        help='Print the destination Box')
     group.add_argument('-u', '--update', action='store_true',
                        help='Update the destination Box using the metadata from the source Drive')
+    group.add_argument('-t', '--testmigrate', action='store_true',
+                       help='Test the migration only - don\'t write any metadata')
 
     # Verbose printing
     parser.add_argument('-v', '--verbose', action='store_true',
@@ -72,7 +74,7 @@ def build_arg_parser():
     return parser
 
 
-def migrate_metadata(box, drive, print_details=False, print_file=None, logger=None):
+def migrate_metadata(box, drive, print_details=False, print_file=None, logger=None, test_only=True):
     """ Move the metadata from Drive to Box
 
     Args:
@@ -80,6 +82,8 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
         drive (Drive): The drive object for metadata to be migrated from
         print_details (bool, optional): Whether to print details of matched, missed, and duplicate files
         print_file (file, optional): The file to which any logging should be printed
+        logger (logger, optional): Logging file
+        test_only (bool, optional): Whether to update the metadata in Box
     """
 
     if logger:
@@ -99,9 +103,12 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
             box_file = box.get_file_via_path(drive_file.path, logger=None)
             if box_file:
                 matched_files.append(drive_file.path)
-                box.apply_metadata(box_file, drive_file)
-                if logger:
-                    logger.debug('Applied metadata at {0}'.format(drive_file.path))
+                if not test_only:
+                    box.apply_metadata(box_file, drive_file)
+                    if logger:
+                        logger.debug('Wrote metadata at {0}'.format(drive_file.path))
+                elif logger:
+                    logger.debug('Matched metadata at {0}'.format(drive_file.path))
                 try:
                     box_missed_files.remove(box_file.path)
                 except ValueError:
@@ -214,7 +221,7 @@ if __name__ == '__main__':
         logging.info("Printing Box...")
         dest_box.print_box(output_file=output_file)
 
-    elif args.update:
+    elif args.update or args.testmigrate:
         # Source Drive
         logging.info("Mapping Drive...")
         src_drive = drive_interface.Drive(path_prefix=PATH_ROOT,
@@ -232,7 +239,11 @@ if __name__ == '__main__':
 
         # Update the metadata
         logging.info("Updating...")
-        migrate_metadata(box=dest_box, drive=src_drive, print_details=args.printall, print_file=output_file)
+        migrate_metadata(box=dest_box,
+                         drive=src_drive,
+                         print_details=args.printall,
+                         print_file=output_file,
+                         test_only=args.testmigrate)
 
     if output_file:
         output_file.close()
