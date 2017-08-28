@@ -80,7 +80,7 @@ def _reset_authentication(cfg, logger=None):
         auth_code_is_available.set()
 
     local_server = StoppableWSGIServer(host='localhost', port=8080)
-    server_thread = Thread(target=lambda: local_oauth_redirect.run(server=local_server))
+    server_thread = Thread(target=lambda: local_oauth_redirect.run(server=local_server), daemon=True)
     server_thread.start()
 
     oauth = OAuth2(
@@ -251,6 +251,19 @@ class Box(object):
                              'legacyCreatedDate': drive_file.created_time,
                              'legacyLastModifyingUser': drive_file.last_modified_by.name,
                              'legacyLastModifiedDate': drive_file.last_modified_time})
+
+    def check_metadata(self, box_file, metadata_name):
+        """ Check if a file has metadata of the specified type
+
+         Args:
+            box_file (BoxObject): File to check
+            metadata_name (str): Metadata type to check for
+        """
+        try:
+            self.client.file(box_file.id).metadata('enterprise', metadata_name).get()
+            return True
+        except exception.BoxAPIException:
+            return False
 
     def get_file_via_path(self, path, logger=None):
         """ Get a file via its path
