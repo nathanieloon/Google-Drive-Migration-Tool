@@ -80,7 +80,7 @@ def _reset_authentication(cfg, logger=None):
         auth_code_is_available.set()
 
     local_server = StoppableWSGIServer(host='localhost', port=8080)
-    server_thread = Thread(target=lambda: local_oauth_redirect.run(server=local_server))
+    server_thread = Thread(target=lambda: local_oauth_redirect.run(server=local_server), daemon=True)
     server_thread.start()
 
     oauth = OAuth2(

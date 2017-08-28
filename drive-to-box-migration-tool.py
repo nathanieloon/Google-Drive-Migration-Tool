@@ -192,6 +192,7 @@ if __name__ == '__main__':
         drive_interface.print_credentials(force_reset=True, logger=logging)
         logging.info("Setting up the connection to Box...")
         box_interface.print_credentials(force_reset=True, logger=logging)
+        logging.info('Setup complete.')
 
     elif args.status:
         # Check the connections
@@ -199,6 +200,7 @@ if __name__ == '__main__':
         drive_interface.print_credentials(force_reset=False, logger=logging)
         logging.info("Checking the connection to Box...")
         box_interface.print_credentials(force_reset=False, logger=logging)
+        logging.info('Checks complete.')
 
     elif args.printdrive:
         # Map and print the Drive
@@ -210,6 +212,7 @@ if __name__ == '__main__':
                                           logger=logging)
         logging.info("Printing Drive...")
         src_drive.print_drive(output_file=output_file)
+        logging.info('Printing complete.')
 
     elif args.printbox:
         # Map and print the Box
@@ -220,6 +223,7 @@ if __name__ == '__main__':
                                      logger=logging)
         logging.info("Printing Box...")
         dest_box.print_box(output_file=output_file)
+        logging.info('Printing complete.')
 
     elif args.update or args.testmigrate:
         # Source Drive
@@ -244,6 +248,8 @@ if __name__ == '__main__':
                          print_details=args.printall,
                          print_file=output_file,
                          test_only=args.testmigrate)
+        logging.info('Migration complete.')
 
     if output_file:
         output_file.close()
+    logging.info('Exiting Migration Tool.')
