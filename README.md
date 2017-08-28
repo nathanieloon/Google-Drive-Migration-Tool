@@ -35,22 +35,22 @@ to check the status of the tool.
 
 ## Usage
 ``` 
-usage: drive-to-box-migration-tool.py [-h] [-r ROOTDRIVE] [-R ROOTBOX]
-                                      [-l LOG_LEVEL]
-                                      (-S | -s | -p | -P | -u | -t) [-v] [-a]
-                                      [-f PRINTTOFILE] [-c]
+usage: drive-to-box-migration-tool.py [-h] [-r PATHTOROOT] [-R PATHTOROOT]
+                                      [-l LOGLEVEL]
+                                      (-S | -s | -p | -P | -u | -t | -k METADATANAME)
+                                      [-v] [-a] [-f FILENAME] [-c]
 
 Google Drive Migration Tool.
 
 optional arguments:
   -h, --help            show this help message and exit
-  -r ROOTDRIVE, --rootdrive ROOTDRIVE
+  -r PATHTOROOT, --rootdrive PATHTOROOT
                         Path to folder within Drive to start in (e.g.
                         "folder/subfolder")
-  -R ROOTBOX, --rootbox ROOTBOX
+  -R PATHTOROOT, --rootbox PATHTOROOT
                         Path to folder within Box to start in (e.g.
                         "folder/subfolder")
-  -l LOG_LEVEL, --log-level LOG_LEVEL
+  -l LOGLEVEL, --loglevel LOGLEVEL
                         Logging level for output
   -S, --setup           Setup connections to Drive and Box
   -s, --status          Check the status of the connections to Drive and Box
@@ -59,11 +59,14 @@ optional arguments:
   -u, --update          Update the destination Box using the metadata from the
                         source Drive
   -t, --testmigrate     Test the migration only - don't write any metadata
+  -k METADATANAME, --checkmetadata METADATANAME
+                        Check which files within a Box directory have metadata
+                        of the specified type
   -v, --verbose         Verbose printing of the drive tree
   -a, --printall        Print a list of matched files, missed files, and
                         possible duplicates. Must be used with the update
                         option
-  -f PRINTTOFILE, --printtofile PRINTTOFILE
+  -f FILENAME, --printtofile FILENAME
                         Save any printed information to a file.
   -c, --credentials     Force a reset of the drive/box web credentials
 

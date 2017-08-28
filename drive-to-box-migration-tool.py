@@ -39,11 +39,11 @@ def build_arg_parser():
         if action.dest != 'help':
             action.help = argparse.SUPPRESS
 
-    parser.add_argument('-r', '--rootdrive', type=str, default=None,
+    parser.add_argument('-r', '--rootdrive', type=str, default=None, metavar='PATHTOROOT',
                         help='Path to folder within Drive to start in (e.g. "folder/subfolder")')
-    parser.add_argument('-R', '--rootbox', type=str, default=None,
+    parser.add_argument('-R', '--rootbox', type=str, default=None, metavar='PATHTOROOT',
                         help='Path to folder within Box to start in (e.g. "folder/subfolder")')
-    parser.add_argument('-l', '--log-level', type=str, default=logging.INFO,
+    parser.add_argument('-l', '--loglevel', type=str, default=logging.INFO,
                         help='Logging level for output')
 
     # Function group
@@ -60,6 +60,8 @@ def build_arg_parser():
                        help='Update the destination Box using the metadata from the source Drive')
     group.add_argument('-t', '--testmigrate', action='store_true',
                        help='Test the migration only - don\'t write any metadata')
+    group.add_argument('-k', '--checkmetadata', type=str, default=None, metavar='METADATANAME',
+                       help='Check which files within a Box directory have metadata of the specified type')
 
     # Verbose printing
     parser.add_argument('-v', '--verbose', action='store_true',
@@ -67,7 +69,7 @@ def build_arg_parser():
     parser.add_argument('-a', '--printall', action='store_true',
                         help='Print a list of matched files, missed files, and possible duplicates. \
                               Must be used with the update option')
-    parser.add_argument('-f', '--printtofile', type=str,
+    parser.add_argument('-f', '--printtofile', type=str, metavar='FILENAME',
                         help='Save any printed information to a file.')
     parser.add_argument('-c', '--credentials', action='store_true',
                         help='Force a reset of the drive/box web credentials')
@@ -139,6 +141,37 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
                    print_file=print_file)
 
 
+def check_metadata(box, metadata_name, print_file=None, logger=None):
+    """ Check for metadata of the specified type on files in Box
+
+    Args:
+        box (Box): The list to be printed
+        metadata_name (str): The name of the metadata to search for
+        print_file (file, optional): The file to which any logging should be printed
+        logger (logger, optional): Logging file
+    """
+
+    hits = []
+    misses = []
+    for file in box.files:
+        if box.check_metadata(file, metadata_name):
+            hits.append(file.path)
+            if logger:
+                logger.debug('Found metadata for {0}'.format(file.path))
+        else:
+            misses.append(file.path)
+            if logger:
+                logger.debug('Failed to find metadata for {0}'.format(file.path))
+
+    print_list(list_to_print=hits,
+               header_message='Found metadata for {0} File Paths:'.format(str(len(hits))),
+               print_file=print_file)
+
+    print_list(list_to_print=misses,
+               header_message='Failed to find metadata for {0} File Paths:'.format(str(len(misses))),
+               print_file=print_file)
+
+
 def print_list(list_to_print, header_message=None, footer_message=None, prefix='\t', print_file=None):
     """ Sort and print out a list of strings, along with optional header and footer messages
 
@@ -152,12 +185,12 @@ def print_list(list_to_print, header_message=None, footer_message=None, prefix='
 
     list_to_print.sort()
     if header_message:
-        print(header_message.encode('utf-8'), file=print_file)
+        print(header_message, file=print_file)
     for list_item in list_to_print:
         if list_item:
-            print((prefix + list_item).encode('utf-8'), file=print_file)
+            print((prefix + list_item), file=print_file)
     if footer_message:
-        print(footer_message.encode('utf-8'), file=print_file)
+        print(footer_message, file=print_file)
 
 
 if __name__ == '__main__':
@@ -174,7 +207,7 @@ if __name__ == '__main__':
     logging.getLogger('oauth2client.transport').setLevel(logging.CRITICAL)
     logging.getLogger('oauth2client.client').setLevel(logging.CRITICAL)
     handler = logging.StreamHandler()
-    handler.setLevel(args.log_level)
+    handler.setLevel(args.loglevel)
     logging.getLogger().addHandler(handler)
 
     # Log args
@@ -204,7 +237,7 @@ if __name__ == '__main__':
 
     elif args.printdrive:
         # Map and print the Drive
-        logging.info("Mapping Drive...")
+        logging.info("Mapping Drive at path: {0}".format(args.rootdrive if args.rootdrive else 'root'))
         src_drive = drive_interface.Drive(path_prefix=PATH_ROOT,
                                           root_path=args.rootdrive,
                                           reset_cred=args.credentials,
@@ -216,7 +249,7 @@ if __name__ == '__main__':
 
     elif args.printbox:
         # Map and print the Box
-        logging.info("Mapping Box...")
+        logging.info("Mapping Box at path: {0}".format(args.rootbox if args.rootbox else 'root'))
         dest_box = box_interface.Box(path_prefix=PATH_ROOT,
                                      root_directory=args.rootbox,
                                      reset_cred=args.credentials,
@@ -227,7 +260,7 @@ if __name__ == '__main__':
 
     elif args.update or args.testmigrate:
         # Source Drive
-        logging.info("Mapping Drive...")
+        logging.info("Mapping Drive at path: {0}".format(args.rootdrive if args.rootdrive else 'root'))
         src_drive = drive_interface.Drive(path_prefix=PATH_ROOT,
                                           root_path=args.rootdrive,
                                           reset_cred=args.credentials,
@@ -235,7 +268,7 @@ if __name__ == '__main__':
                                           logger=logging)
 
         # Destination Box
-        logging.info("Mapping Box...")
+        logging.info("Mapping Box at path: {0}".format(args.rootbox if args.rootbox else 'root'))
         dest_box = box_interface.Box(path_prefix=PATH_ROOT,
                                      root_directory=args.rootbox,
                                      reset_cred=args.credentials,
@@ -249,6 +282,20 @@ if __name__ == '__main__':
                          print_file=output_file,
                          test_only=args.testmigrate)
         logging.info('Migration complete.')
+
+    elif args.checkmetadata:
+        # Map and print the Box
+        logging.info("Mapping Box at path: {0}".format(args.rootbox if args.rootbox else 'root'))
+        dest_box = box_interface.Box(path_prefix=PATH_ROOT,
+                                     root_directory=args.rootbox,
+                                     reset_cred=args.credentials,
+                                     logger=logging)
+        logging.info("Checking Box for Metadata of type: {0}".format(args.checkmetadata))
+        check_metadata(box=dest_box,
+                       metadata_name=args.checkmetadata,
+                       print_file=output_file,
+                       logger=logging)
+        logging.info('Check complete.')
 
     if output_file:
         output_file.close()

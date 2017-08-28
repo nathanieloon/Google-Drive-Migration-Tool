@@ -252,6 +252,19 @@ class Box(object):
                              'legacyLastModifyingUser': drive_file.last_modified_by.name,
                              'legacyLastModifiedDate': drive_file.last_modified_time})
 
+    def check_metadata(self, box_file, metadata_name):
+        """ Check if a file has metadata of the specified type
+
+         Args:
+            box_file (BoxObject): File to check
+            metadata_name (str): Metadata type to check for
+        """
+        try:
+            self.client.file(box_file.id).metadata('enterprise', metadata_name).get()
+            return True
+        except exception.BoxAPIException:
+            return False
+
     def get_file_via_path(self, path, logger=None):
         """ Get a file via its path
 
