@@ -3,7 +3,6 @@ from __future__ import print_function
 
 import httplib2
 import os
-import sys
 
 from apiclient import discovery
 from oauth2client import client, tools
@@ -70,21 +69,25 @@ class Drive(object):
 
     def __init__(self, path_prefix, root_path=None, reset_cred=True, flags=None, logger=None):
         self.name = 'Source'
-        self.folders = set()
+        self.folders = []
         self.root = None
         self._owner = None
-        self.files = set()
-        self.users = set()
+        self.files = []
+        self.users = []
         self._path_prefix = path_prefix
+        self._root_path = root_path
 
         self._credentials = _get_credentials(reset=reset_cred, flags=flags, logger=logger)
         http = self._credentials.authorize(httplib2.Http())
         self.service = discovery.build('drive', 'v3', http=http)
 
         # Initialise the drive
-        self._build_drive(logger)
+        raw_files, raw_folders = self._get_all_files(logger)
+
+        self.root = self._create_root(self._root_path, raw_folders)
         logger.debug("Generating paths for <{0}>.".format(self.name))
-        self._generate_paths()  # This is expensive, optimise if possible
+        self._create_child_folders(self.root, raw_folders)
+        self._create_files(raw_files)
         logger.info("Finished generating paths for <{0}>. Drive has been built.".format(self.name))
 
     def _parse_path(self, path, logger):
@@ -147,69 +150,34 @@ class Drive(object):
         # Return the path objects
         return path_objects
 
-    def print_drive(self, base_folder_path, logger=None, verbose=False, curr_folder=None, prefix="", output_file=None):
-        """ Print the drive structure from the given root folder
+    def print_drive(self, output_file=None):
+        """ Print the Drive, starting from a specified path
 
         Args:
-            base_folder_path (str): Base folder path
-            verbose (bool, optional): Verbose printing on/off, defaults to off
-            curr_folder (Folder, optional): Current folder being printed
-            prefix (str, optional): Prefix for indenting/formatting the printing
-            logger (logger, optional): Logging file
-            output_file (file, optional): File to write the structure to
-
+            output_file (file, optional): File to which to print the structure
         """
-        # If we're looking at the base folder, set it as the current folder
-        if not curr_folder:
-            path_objects = self._parse_path(base_folder_path, logger)
-            if not path_objects:
-                # Will already have thrown error message
-                sys.exit()
-            else:
-                curr_folder = path_objects[-1]
+        self._print_folder(folder=self.folders[0], output_file=output_file)
 
-        # Print the current folder
-        if curr_folder is self.root:
-            if verbose:
-                print(prefix + curr_folder.id, end='', file=output_file)
-            else:
-                print(prefix, end='', file=output_file)
+    def _print_folder(self, folder, prefix='', output_file=None):
+        """ Print a folder, along with all files and subfolders
 
-            print(curr_folder.name +
-                  " (" + curr_folder.owner.name + ")", file=output_file)
-        elif verbose:
-            print(prefix + curr_folder.name +
-                  " (" + curr_folder.owner.name + ")" +
-                  " (" + curr_folder.last_modified_time + ")", end='', file=output_file)
+        Calls itself recursively on each subfolder it finds
 
-            if curr_folder.last_modified_by:
-                print(" (" + curr_folder.last_modified_by.email + ")", file=output_file)
-        else:
-            print(prefix + curr_folder.name, file=output_file)
+        Args:
+            folder (BoxObject): Folder to print out
+            prefix (str): Padding prefix to format output neatly
+            output_file (file, optional): File to which to print the structure
+        """
 
-        # Print file(s)
-        prefix = prefix + "\t"
+        print(prefix + (folder.path if folder.path else folder.name), file=output_file)
+        prefix = prefix + '  '
         for file in self.files:
-            if curr_folder.id in file.parents:
-                if verbose:
-                    print(prefix + file.name +
-                          " (" + file.owner.name + ")" +
-                          " (" + file.last_modified_time + ")", end='', file=output_file)
-                    if file.last_modified_by:
-                        print(" (" + file.last_modified_by.email + ")", file=output_file)
-                else:
-                    print(prefix + file.name, file=output_file)
+            if file.parent == folder:
+                print(prefix + (file.path if file.path else file.name), file=output_file)
 
-        # Print child folder(s)
-        for folder in self.folders:
-            if folder.parents:
-                if curr_folder.id in folder.parents:
-                    self.print_drive(verbose=verbose,
-                                     logger=logger,
-                                     base_folder_path=self._path_prefix,
-                                     curr_folder=folder,
-                                     prefix=prefix,
-                                     output_file=output_file)
+        for subfolder in self.folders:
+            if subfolder.parent == folder:
+                self._print_folder(folder=subfolder, prefix=prefix, output_file=output_file)
 
     def get_file_via_path(self, path, logger=None):
         """ Get a file via its path
@@ -244,45 +212,10 @@ class Drive(object):
             if user.email == user_email:
                 return user
         new_user = User(user_name, user_email)
-        self.users.add(new_user)
+        self.users.append(new_user)
         return new_user
 
-    def _generate_paths(self, curr_item=None, curr_path=None):
-        """ Generate all the paths for every file and folder in the drive - expensive
-
-        Args:
-            curr_item (File/Folder, optional): Current item being looked at
-            curr_path (List, optional): Current path to item being looked at
-
-        """
-        # Start in root
-        if not curr_item:
-            curr_item = self.root
-
-        # Build folders first
-        if not curr_path:
-            curr_path = []
-
-        for file in self.files:
-            path_objects = list(curr_path)
-
-            if curr_path:
-                curr_item = path_objects[-1]
-
-            if not file.path and curr_item.id in file.parents:
-                file.path = curr_item.path + "/" + file.name
-
-        for folder in self.folders:
-            # Reset to the current path
-            path_objects = list(curr_path)
-            if curr_path:
-                curr_item = path_objects[-1]
-
-            if not folder.path and curr_item.id in folder.parents:
-                folder.path = curr_item.path + "/" + folder.name
-                self._generate_paths(folder, path_objects)
-
-    def _build_drive(self, logger=None):
+    def _get_all_files(self, logger=None):
         """ Build the Google Drive for the given service
 
         Args:
@@ -295,19 +228,17 @@ class Drive(object):
         # Get the root "My Drive" folder first
         response = self.service.files().get(fileId='root',
                                             fields="id, mimeType, name, owners").execute()
+
+        raw_files = []
+        raw_folders = [response]
+
         # Set the owner
         self._owner = self._create_or_retrieve_user(response['owners'][0]['emailAddress'],
                                                     response['owners'][0]['displayName'])
         # Set the root
-        self.root = Folder(identifier=response['id'],
-                           name=response['name'],
-                           owner=self._owner,
-                           parents=None,
-                           last_modified_time=None,
-                           last_modified_by=None,
-                           path=self._path_prefix)
         if logger:
-            logger.debug("root_folder: {0}, root_owner: {1} ".format(self.root, self._owner))
+            logger.debug("root_folder: {0}, root_owner: {1} ".format(response['name'],
+                                                                     response['owners'][0]['displayName']))
 
         page_token = None
         page_no = 1
@@ -329,63 +260,17 @@ class Drive(object):
                                                                createdTime)").execute()
             results = response.get('files', [])
 
-            # Build folder structure in memory
             for result in results:
-                # Create owner
-                owner = self._create_or_retrieve_user(result['owners'][0]['emailAddress'],
-                                                      result['owners'][0]['displayName'])
-
-                # Save last modifying user, if it exists
-                if 'lastModifyingUser' in result and 'emailAddress' in result['lastModifyingUser']:
-                    modified_by = self._create_or_retrieve_user(result['owners'][0]['emailAddress'],
-                                                                result['owners'][0]['displayName'])
-                else:
-                    # Set the last modifier to be the file owner if no last modified exists
-                    modified_by = owner
-
-                # Check if it's a root folder
-                if 'parents' in result:
-                    parents = result['parents']
-                else:
-                    parents = [self.root.id]
-
-                # Create drive item
                 if result['mimeType'] == 'application/vnd.google-apps.folder':
-                    folder = Folder(identifier=result['id'],
-                                    name=result['name'],
-                                    owner=owner,
-                                    parents=parents,
-                                    created_time=result['createdTime'],
-                                    last_modified_time=result['modifiedTime'],
-                                    last_modified_by=modified_by)
-                    self.folders.add(folder)
+                    raw_folders.append(result)
                     if logger:
-                        logger.debug("folder: {0}, owner: {1}".format(folder, owner))
+                        logger.debug("folder: {0}, owner: {1}".format(result['name'],
+                                                                      result['owners'][0]['displayName']))
                 else:
-                    file = File(identifier=result['id'],
-                                name=result['name'],
-                                owner=owner,
-                                parents=parents,
-                                created_time=result['createdTime'],
-                                last_modified_time=result['modifiedTime'],
-                                last_modified_by=modified_by,
-                                mime_type=result['mimeType'])
-                    if file.mime_type == 'application/vnd.google-apps.document'\
-                            and not file.name.lower().endswith('.docx')\
-                            and not file.name.lower().endswith('.doc')\
-                            and not file.name.lower().endswith('.txt'):
-                        file.name = file.name + '.docx'
-                    elif file.mime_type == 'application/vnd.google-apps.spreadsheet'\
-                            and not file.name.lower().endswith('.xlsx')\
-                            and not file.name.lower().endswith('.xls'):
-                        file.name = file.name + '.xlsx'
-                    elif file.mime_type == 'application/vnd.google-apps.presentation'\
-                            and not file.name.lower().endswith('.pptx')\
-                            and not file.name.lower().endswith('.ppt'):
-                        file.name = file.name + '.pptx'
-                    self.files.add(file)
+                    raw_files.append(result)
                     if logger:
-                        logger.debug("file: {0}, owner: {1}".format(file, owner))
+                        logger.debug("file: {0}, owner: {1}".format(result['name'],
+                                                                    result['owners'][0]['displayName']))
 
             # Look for more pages of results
             page_token = response.get('nextPageToken', None)
@@ -394,6 +279,119 @@ class Drive(object):
                 break
         if logger:
             logger.info("Found <{0}> pages of results for <{1}>. Building Drive...".format(page_no, self.name))
+
+        for raw_folder in raw_folders:
+            if 'parents' not in raw_folder:
+                raw_folder['parents'] = raw_folders[0]['id']
+
+        return raw_files, raw_folders
+
+    def _create_root(self, root_directory, raw_folders):
+        if root_directory and root_directory.startswith(self._path_prefix):
+            root_directory = root_directory.replace(self._path_prefix + '/', '')
+
+        current_folder = raw_folders[0]
+        if root_directory and root_directory != '':
+            paths = root_directory.split('/')
+            for path in paths:
+                found_path = False
+                for folder in raw_folders:
+                    if folder['name'] == path and 'parents' in folder and current_folder['id'] in folder['parents']:
+                        found_path = True
+                        current_folder = folder
+                        break
+                if not found_path:
+                    raise FileNotFoundError('Couldn\'t find the root folder <{0}> in Drive'.format(root_directory))
+        owner = self._create_or_retrieve_user(current_folder['owners'][0]['emailAddress'],
+                                              current_folder['owners'][0]['displayName'])
+
+        if 'lastModifyingUser' in current_folder and 'emailAddress' in current_folder['lastModifyingUser']:
+            modified_by = self._create_or_retrieve_user(current_folder['lastModifyingUser']['emailAddress'],
+                                                        current_folder['lastModifyingUser']['displayName'])
+        else:
+            # Set the last modifier to be the file owner if no last modified exists
+            modified_by = owner
+
+        created_time = current_folder['createdTime'] if 'createdTime' in current_folder else ''
+        modified_time = current_folder['modifiedTime'] if 'modifiedTime' in current_folder else created_time
+
+        root_folder = Folder(identifier=current_folder['id'],
+                             name=self._path_prefix,
+                             owner=owner,
+                             parent=None,
+                             created_time=created_time,
+                             last_modified_time=modified_time,
+                             last_modified_by=modified_by)
+
+        self.folders.append(root_folder)
+        return root_folder
+
+    def _create_child_folders(self, parent_folder, all_folders):
+        for raw_folder in all_folders:
+
+            if parent_folder.id in raw_folder['parents'] and parent_folder.id != raw_folder['id']:
+                owner = self._create_or_retrieve_user(raw_folder['owners'][0]['displayName'],
+                                                      raw_folder['owners'][0]['emailAddress'])
+                if 'lastModifyingUser' in raw_folder:
+                    last_modifier = self._create_or_retrieve_user(raw_folder['lastModifyingUser']['displayName'],
+                                                                  raw_folder['lastModifyingUser']['emailAddress'])
+                else:
+                    last_modifier = owner
+
+                created_time = raw_folder['createdTime'] if 'createdTime' in raw_folder else ''
+                modified_time = raw_folder['modifiedTime'] if 'modifiedTime' in raw_folder else created_time
+
+                new_folder = Folder(identifier=raw_folder['id'],
+                                    name=raw_folder['name'],
+                                    owner=owner,
+                                    parent=parent_folder,
+                                    created_time=created_time,
+                                    last_modified_time=modified_time,
+                                    last_modified_by=last_modifier)
+                self.folders.append(new_folder)
+                self._create_child_folders(parent_folder=new_folder, all_folders=all_folders)
+
+    def _create_files(self, raw_files):
+        for raw_file in raw_files:
+            if 'parents' in raw_file:
+                for folder in self.folders:
+                    if folder.id in raw_file['parents']:
+                        filename = raw_file['name']
+                        if raw_file['mimeType'] == 'application/vnd.google-apps.document'\
+                                and not raw_file['name'].lower().endswith('.docx')\
+                                and not raw_file['name'].lower().endswith('.doc')\
+                                and not raw_file['name'].lower().endswith('.txt'):
+                            filename = filename + '.docx'
+                        elif raw_file['mimeType'] == 'application/vnd.google-apps.spreadsheet'\
+                                and not raw_file['name'].lower().endswith('.xlsx')\
+                                and not raw_file['name'].lower().endswith('.xls'):
+                            filename = filename + '.xlsx'
+                        elif raw_file['mimeType'] == 'application/vnd.google-apps.presentation'\
+                                and not raw_file['name'].lower().endswith('.pptx')\
+                                and not raw_file['name'].lower().endswith('.ppt'):
+                            filename = filename + '.pptx'
+
+                        owner = self._create_or_retrieve_user(raw_file['owners'][0]['displayName'],
+                                                              raw_file['owners'][0]['emailAddress'])
+                        if 'lastModifyingUser' in raw_file:
+                            last_modifier = self._create_or_retrieve_user(
+                                raw_file['lastModifyingUser']['displayName'],
+                                raw_file['lastModifyingUser']['emailAddress'])
+                        else:
+                            last_modifier = owner
+
+                        created_time = raw_file['createdTime'] if 'createdTime' in raw_file else ''
+                        modified_time = raw_file['modifiedTime'] if 'modifiedTime' in raw_file else created_time
+
+                        new_file = File(identifier=raw_file['id'],
+                                        owner=owner,
+                                        name=filename,
+                                        parent=folder,
+                                        created_time=created_time,
+                                        last_modified_time=modified_time,
+                                        last_modified_by=last_modifier,
+                                        mime_type=raw_file['mimeType'])
+                        self.files.append(new_file)
 
 
 class User(object):
@@ -424,7 +422,7 @@ class File(object):
         identifier (str): Google Drive ID of the file
         name (str): Name of the file
         owner (User.User): Owner of the file
-        parents ([str]): List of parent IDs
+        parent (Folder, optional): List of parent IDs
         created_time (str): Time/date created
         last_modified_time (str): "Last modified time"
         last_modified_by (User.User): "Last modified by" user
@@ -434,7 +432,7 @@ class File(object):
         id (str): Google Drive ID of the file
         name (str): Name of the file
         owner (User.User): Owner of the file
-        parents ([str]): List of parent IDs
+        parent (Folder, optional): The parent folder
         created_time (str): Time/date created
         last_modified_time (str): "Last modified time"
         last_modified_by (User.User): "Last modified by" user
@@ -447,20 +445,23 @@ class File(object):
                  identifier,
                  name,
                  owner,
-                 parents,
                  created_time,
                  last_modified_time,
                  last_modified_by,
-                 mime_type):
+                 mime_type,
+                 parent=None):
         self.id = identifier
         self.name = name
-        self.parents = parents
         self.owner = owner
         self.created_time = created_time
         self.last_modified_time = last_modified_time
         self.last_modified_by = last_modified_by
         self.mime_type = mime_type
-        self.path = None
+        self.parent = parent
+        if self.parent:
+            self.path = (parent.path if parent.path else parent.name) + '/' + self.name
+        else:
+            self.path = None
 
     def __repr__(self):
         return "<file: {0}>".format(self.name)
@@ -473,17 +474,15 @@ class Folder(object):
         identifier (str): Google Drive ID of the folder
         name (str): Name of the folder
         owner (User.User): Owner of the folder
-        parents ([str], optional): List of parent IDs
+        parent ([Folder, optional): The object's parent folder
         created_time (str): Time/date created
         last_modified_time (str, optional): "Last modified time"
         last_modified_by (User.User, optional): "Last modified by" user
-        path (str, optional): Path to the folder within the Drive
 
     Attributes:
         id (str): Google Drive ID of the folder
         name (str): Name of the folder
         owner (User.User): Owner of the folder
-        parents ([str]): List of parent IDs
         created_time (str): Time/date created
         last_modified_time (str): "Last modified time"
         last_modified_by (User.User): "Last modified by" user
@@ -495,20 +494,21 @@ class Folder(object):
                  identifier,
                  name,
                  owner,
-                 parents=None,
+                 parent=None,
                  created_time=None,
                  last_modified_time=None,
-                 last_modified_by=None,
-                 path=None):
+                 last_modified_by=None):
         self.id = identifier
         self.name = name
-        self.parents = parents
         self.owner = owner
         self.created_time = created_time
         self.last_modified_time = last_modified_time
         self.last_modified_by = last_modified_by
-
-        self.path = path
+        self.parent = parent
+        if self.parent:
+            self.path = (parent.path if parent.path else parent.name) + '/' + self.name
+        else:
+            self.path = None
 
     def __repr__(self):
         return "<folder: {0}>".format(self.name)

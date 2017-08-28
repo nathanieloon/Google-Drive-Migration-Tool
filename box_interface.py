@@ -12,9 +12,6 @@ from wsgiref.simple_server import WSGIServer, WSGIRequestHandler, make_server
 
 CONFIG_FILE = 'box_app.cfg'
 REQUEST_COUNT = 200
-QUERY_STRING = 'a b c d e f g h i j k l m n o p q r s t u v w y z '\
-               + 'A B C D E F G H I J K L M N O P Q R S T U V W X Y Z '\
-               + '0 1 2 3 4 5 6 7 8 9'
 
 
 class StoppableWSGIServer(bottle.ServerAdapter):
@@ -135,27 +132,12 @@ def _retrieve_all_items(parent_folder):
         new_items = parent_folder.get_items(limit=REQUEST_COUNT, offset=offset)
         if all_items is None:
             all_items = new_items
-        else:
+        elif new_items:
             all_items = all_items + new_items
+
         if len(new_items) < REQUEST_COUNT:
             return all_items
         offset += REQUEST_COUNT
-
-
-def _map_child_folders(parent_folder, all_folders):
-    """ Sets the parent of each folder which is a child of the given folder
-
-    Calls itself recursively on each subfolder it finds
-
-    Args:
-        parent_folder (BoxObject): Folder for which to find children
-        all_folders ([BoxObject]): List of folders to check against
-    """
-
-    for folder in all_folders:
-        if folder.parent_id is not None and folder.parent_id == parent_folder.id:
-            folder.set_parent(parent_folder)
-            _map_child_folders(folder, all_folders)
 
 
 class Box(object):
@@ -199,56 +181,7 @@ class Box(object):
         self.files = []
         self.folders = [root_object]
 
-        # Retrieve all descendant files of the root
-        offset = 0
-        while True:
-            retrieved_files = self.client.search(query=QUERY_STRING,
-                                                 limit=REQUEST_COUNT,
-                                                 offset=offset,
-                                                 result_type='file')
-
-            if logger:
-                logger.debug('retreived files #{0} to #{1}'.format(str(offset + 1), str(offset + len(retrieved_files))))
-            offset += REQUEST_COUNT
-
-            for box_file in retrieved_files:
-                self.files.append(BoxObject(identifier=box_file.id,
-                                            name=box_file.name,
-                                            parent_id=box_file.parent['id'] if box_file.parent else None))
-
-            if len(retrieved_files) < REQUEST_COUNT:
-                # No more files
-                break
-
-        # Retrieve all descendant folders of the root
-        offset = 0
-        while True:
-            retrieved_folders = self.client.search(query=QUERY_STRING,
-                                                   limit=REQUEST_COUNT,
-                                                   offset=offset,
-                                                   result_type='folder')
-
-            if logger:
-                logger.debug('retreived folders #{0} to #{1}'.format(str(offset + 1),
-                                                                     str(offset + len(retrieved_folders))))
-            offset += REQUEST_COUNT
-
-            for box_folder in retrieved_folders:
-                self.folders.append(BoxObject(identifier=box_folder.id,
-                                              name=box_folder.name,
-                                              parent_id=box_folder.parent['id'] if box_folder.parent else None))
-
-            if len(retrieved_folders) < REQUEST_COUNT:
-                # No more files
-                break
-
-        # Map the parents
-        _map_child_folders(root_object, self.folders)
-        for file in self.files:
-            for folder in self.folders:
-                if file.parent_id is not None and file.parent_id == folder.id:
-                    file.set_parent(folder)
-                    break
+        self._build_child_items(root_object)
 
         if logger:
             logger.debug('Mapped {0} files and {1} folders'.format(str(len(self.files)), str(len(self.folders))))
@@ -284,8 +217,19 @@ class Box(object):
                     current_folder = box_item
                     break
             if not found_path:
-                raise FileNotFoundError('Couldn\'t find the root folder <{0}> in box'.format(root_directory))
+                raise FileNotFoundError('Couldn\'t find the root folder <{0}> in Box'.format(root_directory))
         return current_folder
+
+    def _build_child_items(self, parent_folder):
+        children = _retrieve_all_items(self.client.folder(folder_id=parent_folder.id))
+        for child in children:
+            if child.type == 'folder':
+                child_folder = BoxObject(identifier=child.object_id, name=child.name, parent=parent_folder)
+                self.folders.append(child_folder)
+                self._build_child_items(child_folder)
+            else:
+                child_file = BoxObject(identifier=child.object_id, name=child.name, parent=parent_folder)
+                self.files.append(child_file)
 
     def apply_metadata(self, box_file, drive_file):
         """ Apply the metadata from a Drive file to a matched Box file, based on
@@ -326,22 +270,13 @@ class Box(object):
             logger.error("Could not find file at <{0}> in Box.".format(path))
         return None
 
-    def print_box(self, base_folder_path=None, output_file=None):
+    def print_box(self, output_file=None):
         """ Print the Box, starting from a specified path
 
         Args:
-            base_folder_path (str): Path to treat as the root
             output_file (file, optional): File to which to print the structure
         """
-
-        if base_folder_path is None:
-            base_folder_path = self.path_prefix
-        for folder in self.folders:
-            if folder.path == base_folder_path:
-                self._print_folder(folder=folder, output_file=output_file)
-                break
-        else:
-            print("Failed to find a folder at path {0}".format(base_folder_path), file=output_file)
+        self._print_folder(folder=self.folders[0], output_file=output_file)
 
     def _print_folder(self, folder, prefix='', output_file=None):
         """ Print a folder, along with all files and subfolders
@@ -371,12 +306,11 @@ class BoxObject(object):
     Args:
         identifier (str): Box ID of the file
         name (str): Name of the file
-        parent_id (str, optional): List of parent IDs
+        parent (BoxObject): List of parent IDs
 
     Attributes:
         id (str): ID of the file
         name (str): Name of the file
-        parent_id (str): ID of the parent object
         parent (BoxObject): Parent object
         path (str): Path to the file within Box
     """
@@ -384,12 +318,10 @@ class BoxObject(object):
     def __init__(self,
                  identifier,
                  name,
-                 parent_id=None):
+                 parent=None):
 
         self.id = identifier
         self.name = name
-        self.parent_id = parent_id
-        self.parent = None
         self.path = None
 
         # Accommodate for Box replacing '/' within file names for imported files
@@ -397,18 +329,9 @@ class BoxObject(object):
             self.name = self.name.replace('002f', '/')
             self.name = self.name.replace(' - Modify', '')
 
-        if self.parent_id is None:
-            self.path = name
+        self.parent = parent
+        if self.parent:
+            self.path = (self.parent.path if self.parent.path else self.parent.name) + '/' + self.name
 
     def __repr__(self):
         return "<file: {0}>".format(self.name)
-
-    def set_parent(self, parent):
-        """Set the object's parent
-
-        Args:
-            parent (BoxObject): this object's parent
-        """
-
-        self.parent = parent
-        self.path = (self.parent.path if self.parent.path else self.parent.name) + '/' + self.name
