@@ -222,15 +222,15 @@ if __name__ == '__main__':
     if args.setup:
         # Setup the connections
         logging.info("Setting up the connection to Drive...")
-        drive_interface.print_credentials(force_reset=True, logger=logging)
+        drive_interface.print_credentials(force_reset=True, logger=logging, flags=args)
         logging.info("Setting up the connection to Box...")
         box_interface.print_credentials(force_reset=True, logger=logging)
         logging.info('Setup complete.')
 
     elif args.status:
         # Check the connections
-        logging.info("Setting up the connection to Drive...")
-        drive_interface.print_credentials(force_reset=False, logger=logging)
+        logging.info("Checking the connection to Drive...")
+        drive_interface.print_credentials(force_reset=False, logger=logging, flags=args)
         logging.info("Checking the connection to Box...")
         box_interface.print_credentials(force_reset=False, logger=logging)
         logging.info('Checks complete.')
@@ -285,17 +285,20 @@ if __name__ == '__main__':
 
     elif args.checkmetadata:
         # Map and print the Box
-        logging.info("Mapping Box at path: {0}".format(args.rootbox if args.rootbox else 'root'))
-        dest_box = box_interface.Box(path_prefix=PATH_ROOT,
-                                     root_directory=args.rootbox,
-                                     reset_cred=args.credentials,
-                                     logger=logging)
-        logging.info("Checking Box for Metadata of type: {0}".format(args.checkmetadata))
-        check_metadata(box=dest_box,
-                       metadata_name=args.checkmetadata,
-                       print_file=output_file,
-                       logger=logging)
-        logging.info('Check complete.')
+        if box_interface.check_metadata_exists(args.checkmetadata):
+            logging.info("Mapping Box at path: {0}".format(args.rootbox if args.rootbox else 'root'))
+            dest_box = box_interface.Box(path_prefix=PATH_ROOT,
+                                         root_directory=args.rootbox,
+                                         reset_cred=args.credentials,
+                                         logger=logging)
+            logging.info("Checking Box for Metadata of type: {0}".format(args.checkmetadata))
+            check_metadata(box=dest_box,
+                           metadata_name=args.checkmetadata,
+                           print_file=output_file,
+                           logger=logging)
+            logging.info('Check complete.')
+        else:
+            logging.error("Error: metadata of type \'{0}\' does not exist in Box.".format(args.checkmetadata))
 
     if output_file:
         output_file.close()

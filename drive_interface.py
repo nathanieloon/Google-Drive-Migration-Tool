@@ -11,8 +11,8 @@ from oauth2client.file import Storage
 CLIENT_KEY_FILE = 'client_secret.json'
 
 
-def print_credentials(force_reset=False, logger=None):
-    credentials = _get_credentials(reset=force_reset, logger=logger)
+def print_credentials(force_reset=False, logger=None, flags=None):
+    credentials = _get_credentials(reset=force_reset, logger=logger, flags=flags)
     http = credentials.authorize(httplib2.Http())
     service = discovery.build('drive', 'v3', http=http)
     about = service.about().get(fields="user").execute()
@@ -77,7 +77,8 @@ class Drive(object):
         self._path_prefix = path_prefix
         self._root_path = root_path
 
-        self._credentials = _get_credentials(reset=reset_cred, flags=flags, logger=logger)
+        print('attempting auth')
+        self._credentials = _get_credentials(reset=reset_cred, logger=logger)
         http = self._credentials.authorize(httplib2.Http())
         self.service = discovery.build('drive', 'v3', http=http)
 
