@@ -35,6 +35,15 @@ def print_credentials(force_reset=False, logger=None):
         logger.info('Logged into Box with username: {0}'.format(user_email))
 
 
+def check_metadata_exists(metadata_name):
+    try:
+        url = 'https://api.box.com/2.0/metadata_templates/enterprise/{0}/schema'.format(metadata_name)
+        _authenticate(force_reset=False, logger=None).make_request('GET', url)
+        return True
+    except exception.BoxAPIException:
+        return False
+
+
 def _authenticate(force_reset=False, logger=None):
     # Config setup
     cfg = configparser.ConfigParser()
@@ -259,6 +268,7 @@ class Box(object):
             box_file (BoxObject): File to check
             metadata_name (str): Metadata type to check for
         """
+
         try:
             self.client.file(box_file.id).metadata('enterprise', metadata_name).get()
             return True
