@@ -92,6 +92,7 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
         logger.debug('Matching files between Drive:/{0} and Box:/{1}'.format(drive.root, box.path))
 
     matched_files = []
+    existing_metadata_files = []
     box_missed_files = []
     drive_missed_files = []
     duplicate_files = []
@@ -104,13 +105,19 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
         if drive_file.path:
             box_file = box.get_file_via_path(drive_file.path, logger=None)
             if box_file:
-                matched_files.append(drive_file.path)
                 if not test_only:
-                    box.apply_metadata(box_file, drive_file)
+                    if box.apply_metadata(box_file, drive_file):
+                        matched_files.append(drive_file.path)
+                        if logger:
+                            logger.debug('Wrote metadata at {0}'.format(drive_file.path))
+                    else:
+                        existing_metadata_files.append(drive_file.path)
+                        if logger:
+                            logger.debug('Metadata already exists at {0}'.format(drive_file.path))
+                else:
+                    matched_files.append(drive_file.path)
                     if logger:
-                        logger.debug('Wrote metadata at {0}'.format(drive_file.path))
-                elif logger:
-                    logger.debug('Matched metadata at {0}'.format(drive_file.path))
+                        logger.debug('Matched metadata at {0}'.format(drive_file.path))
                 try:
                     box_missed_files.remove(box_file.path)
                 except ValueError:
@@ -125,19 +132,30 @@ def migrate_metadata(box, drive, print_details=False, print_file=None, logger=No
                     logger.debug('Failed to match file at {0}'.format(drive_file.path))
 
     if print_details:
-        print_list(list_to_print=matched_files,
-                   header_message='Matched {0} File Paths:'.format(str(len(matched_files))),
-                   print_file=print_file)
+        if test_only:
+            print_list(list_to_print=matched_files,
+                       header_message='Matched paths for {0} Files:'.format(str(len(matched_files))),
+                       print_file=print_file)
+
+        else:
+            print_list(list_to_print=existing_metadata_files,
+                       header_message='Found existing metadata for {0} matched Files:'.format(str(len(existing_metadata_files))),
+                       print_file=print_file)
+
+            print_list(list_to_print=matched_files,
+                       header_message='Added metadata for {0} matched Files:'.format(str(len(matched_files))),
+                       print_file=print_file)
 
         print_list(list_to_print=drive_missed_files,
-                   header_message='Failed to Match {0} File Paths from Drive:'.format(str(len(drive_missed_files))),
+                   header_message='Failed to Match {0} File paths from Drive:'.format(str(len(drive_missed_files))),
                    print_file=print_file)
+
         print_list(list_to_print=box_missed_files,
-                   header_message='Failed to Match {0} File Paths from Box:'.format(str(len(box_missed_files))),
+                   header_message='Failed to Match {0} File pathss from Box:'.format(str(len(box_missed_files))),
                    print_file=print_file)
 
         print_list(list_to_print=duplicate_files,
-                   header_message='Found {0} Duplicate File Paths:'.format(str(len(duplicate_files))),
+                   header_message='Found {0} Duplicate Files:'.format(str(len(duplicate_files))),
                    print_file=print_file)
 
 

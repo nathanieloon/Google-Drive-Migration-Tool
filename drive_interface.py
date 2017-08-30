@@ -342,8 +342,10 @@ class Drive(object):
                 created_time = raw_folder['createdTime'] if 'createdTime' in raw_folder else ''
                 modified_time = raw_folder['modifiedTime'] if 'modifiedTime' in raw_folder else created_time
 
+                folder_name = raw_folder['name'].rstrip()
+
                 new_folder = Folder(identifier=raw_folder['id'],
-                                    name=raw_folder['name'],
+                                    name=folder_name,
                                     owner=owner,
                                     parent=parent_folder,
                                     created_time=created_time,
@@ -371,6 +373,8 @@ class Drive(object):
                                 and not raw_file['name'].lower().endswith('.pptx')\
                                 and not raw_file['name'].lower().endswith('.ppt'):
                             filename = filename + '.pptx'
+
+                        filename = filename.rstrip()
 
                         owner = self._create_or_retrieve_user(raw_file['owners'][0]['displayName'],
                                                               raw_file['owners'][0]['emailAddress'])

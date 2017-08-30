@@ -255,11 +255,14 @@ class Box(object):
                                  'legacyCreatedDate': drive_file.created_time,
                                  'legacyLastModifyingUser': drive_file.last_modified_by.name,
                                  'legacyLastModifiedDate': drive_file.last_modified_time})
+                return True
         except exception.BoxAPIException:
             metadata.create({'owner': drive_file.owner.name,
                              'legacyCreatedDate': drive_file.created_time,
                              'legacyLastModifyingUser': drive_file.last_modified_by.name,
                              'legacyLastModifiedDate': drive_file.last_modified_time})
+            return True
+        return False
 
     def check_metadata(self, box_file, metadata_name):
         """ Check if a file has metadata of the specified type
